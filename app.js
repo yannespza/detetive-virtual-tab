@@ -83,11 +83,18 @@ async function commit(mutate, extra = {}) {
 // ---------- início ----------
 async function boot() {
   app.innerHTML = `<div class="center"><div class="spinner"></div><p>Carregando...</p></div>`;
+  let step = 'login';
   try {
     S.uid = await api.init();
+    step = 'casos';
     S.cases = await api.listCases();
+    if (!S.cases.length) throw new Error('Nenhum caso encontrado no banco de dados (o SQL foi rodado?)');
   } catch (e) {
-    app.innerHTML = `<div class="center card"><h2>Não foi possível conectar</h2><p>${esc(e.message)}</p>
+    let hint = '';
+    if (/anonymous/i.test(e.message)) hint = 'No Supabase, ative: Authentication → Sign In / Providers → <b>Allow anonymous sign-ins</b> → Save.';
+    else if (/relation|does not exist|schema cache/i.test(e.message)) hint = 'As tabelas do jogo não existem. Rode o arquivo SQL no SQL Editor do Supabase.';
+    else if (/fetch|network/i.test(e.message)) hint = 'Sem conexão com o Supabase. Confira a internet ou o endereço do projeto.';
+    app.innerHTML = `<div class="center card"><h2>Não foi possível conectar</h2><p>Etapa: <b>${step}</b></p><p>${esc(e.message)}</p>${hint ? `<p class="err">${hint}</p>` : ''}
       <button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
     return;
   }
