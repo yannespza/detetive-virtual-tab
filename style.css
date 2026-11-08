@@ -274,3 +274,26 @@ h4 small.muted { font-weight: 400; font-size: 11px; margin-left: 6px; font-famil
 .react-pop .rn { font-size: 12px; color: #fff; padding: 2px 8px; border-radius: 9px; font-weight: 700; text-shadow: 0 1px 1px rgba(0,0,0,.4); }
 @keyframes reactUp { 0% { transform: translateY(30px) scale(.6); opacity: 0; } 12% { transform: translateY(0) scale(1.1); opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(-140px) scale(1); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .react-pop { animation: none; } }
+/* avaliação */
+.rate { margin: 8px 0 14px; padding: 12px; border-radius: 10px; background: rgba(201,162,39,.12); border: 1px solid rgba(168,132,28,.35); display: grid; gap: 8px; }
+.rate.done { display: block; font-size: 14px; }
+.rate .stars { color: #a8841c; }
+.rate-stars { display: flex; gap: 4px; }
+.rate-stars button { font-size: 30px; line-height: 1; background: none; border: 0; color: #a8841c; cursor: pointer; padding: 2px; }
+.rate-diff { display: flex; flex-wrap: wrap; gap: 6px; }
+.rate-diff button { border: 1px solid rgba(43,32,22,.25); background: rgba(255,255,255,.4); border-radius: 18px; padding: 6px 10px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+.rate-diff button.on { background: #a8841c; color: #fff; border-color: #a8841c; }
+.rate textarea { width: 100%; font: inherit; font-size: 14px; }
+/* abas do ranking */
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.tabs button { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid rgba(43,32,22,.25); background: transparent; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; }
+.tabs button.on { background: #a8841c; color: #fff; border-color: #a8841c; }
+.cstats { display: grid; gap: 8px; }
+.cs { padding: 9px 10px; border-radius: 10px; background: rgba(43,32,22,.05); font-size: 13px; }
+.cs-h { font-family: var(--serif); font-size: 15px; }
+.cs .stars { color: #a8841c; font-size: 12px; }
+.cs-n, .cs-t { color: #5a4730; margin-top: 3px; }
+.cs-t { font-size: 12px; color: #7a6345; }
+.cs details summary { cursor: pointer; margin-top: 4px; color: #7a6345; font-weight: 600; }
+.cs-c { margin: 4px 0 0; font-family: var(--book); font-style: italic; }
+.rate .link { color: #7a6345; padding: 0 6px; }

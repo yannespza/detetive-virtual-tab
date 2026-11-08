@@ -845,13 +845,51 @@ async function showEnd() {
   let sol = null;
   try { sol = await api.revealSolution(S.room.id); } catch {}
   const s = st(), c = caseOf(S.room.case_id);
-  modal({ cls: 'wide', title: s.winner ? `🏆 ${esc(nameOf(s.winner))} resolveu o caso!` : '🕯️ O culpado escapou...',
-    html: `<p><b>Caso ${c.id} · ${esc(c.title)}</b></p>
+  const dur = s.startedAt && s.endedAt ? fmtMin(s.endedAt - s.startedAt) : null;
+  const wrap = modal({ cls: 'wide', title: s.winner ? `🏆 ${esc(nameOf(s.winner))} resolveu o caso!` : '🕯️ O culpado escapou...',
+    html: `<p><b>Caso ${c.id} · ${esc(c.title)}</b>${dur ? `<br><span class="muted small">⏱️ Tempo da partida: <b>${dur}</b> · ${s.order.length} detetive${s.order.length > 1 ? 's' : ''}</span>` : ''}</p>
+      <div id="rate-box"></div>
       ${sol ? sol.solution.map((x) => `<div class="cmp"><div class="q">${x.key}) ${esc(x.label)}</div>
         ${s.winner ? `<div class="mine"><small>Resposta de ${esc(nameOf(s.winner))}</small>${esc(s.winnerAnswers?.[x.key] || '—')}</div>` : ''}
         <div class="off"><small>Solução oficial</small>${esc(x.answer)}</div>${whyBox(x)}</div>`).join('')
         + `<h4 class="sol-h">Como tudo aconteceu</h4><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div>` : '<p>Não foi possível carregar a solução.</p>'}`,
     buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Nova partida', cls: 'primary', onClick: leaveRoom }] });
+  drawRating($('#rate-box', wrap));
+}
+
+// ---------- avaliação do caso (no fim da partida) ----------
+const DIFF = { facil: '😌 Fácil', justo: '👌 Na medida', dificil: '🤯 Difícil demais' };
+function drawRating(box) {
+  if (!box) return;
+  const mine = st().ratings?.[S.uid];
+  if (mine) {
+    box.innerHTML = `<div class="rate done">Sua avaliação: <span class="stars">${'★'.repeat(mine.stars)}${'☆'.repeat(5 - mine.stars)}</span> · ${DIFF[mine.diff] || ''} <button class="link small" id="rate-edit">alterar</button></div>`;
+    $('#rate-edit', box).onclick = () => { box.dataset.edit = '1'; drawRatingForm(box, mine); };
+    return;
+  }
+  drawRatingForm(box, {});
+}
+function drawRatingForm(box, cur) {
+  let stars = cur.stars || 0, diff = cur.diff || '';
+  box.innerHTML = `<div class="rate"><b>O que achou deste caso?</b>
+    <div class="rate-stars">${[1, 2, 3, 4, 5].map((n) => `<button data-s="${n}" aria-label="${n} estrelas">☆</button>`).join('')}</div>
+    <div class="rate-diff">${Object.entries(DIFF).map(([k, v]) => `<button data-d="${k}">${v}</button>`).join('')}</div>
+    <textarea id="rate-c" rows="2" maxlength="300" placeholder="Comentário (opcional): o que achou da história, das pistas, das charadas?">${esc(cur.comment || '')}</textarea>
+    <button class="btn primary" id="rate-send" disabled>Enviar avaliação</button></div>`;
+  const upd = () => {
+    box.querySelectorAll('[data-s]').forEach((b) => { b.textContent = +b.dataset.s <= stars ? '★' : '☆'; b.classList.toggle('on', +b.dataset.s <= stars); });
+    box.querySelectorAll('[data-d]').forEach((b) => b.classList.toggle('on', b.dataset.d === diff));
+    $('#rate-send', box).disabled = !(stars && diff);
+  };
+  box.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { stars = +b.dataset.s; upd(); }));
+  box.querySelectorAll('[data-d]').forEach((b) => (b.onclick = () => { diff = b.dataset.d; upd(); }));
+  $('#rate-send', box).onclick = async () => {
+    const comment = $('#rate-c', box).value.trim().slice(0, 300);
+    $('#rate-send', box).disabled = true;
+    const ok = await commit((s) => { s.ratings = s.ratings || {}; s.ratings[S.uid] = { stars, diff, comment, name: nameOf(S.uid), t: Date.now() }; });
+    if (ok) { toast('Obrigado pela avaliação!'); drawRating(box); } else $('#rate-send', box).disabled = false;
+  };
+  upd();
 }
 
 // ---------- caso, caderneta, menu ----------
@@ -980,11 +1018,18 @@ function showReaction(r) {
 
 // ---------- ranking (só partidas com 2 ou mais jogadores) ----------
 const nkey = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-const fmtMin = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`; };
+const fmtMin = (ms) => { const m = Math.round(ms / 60000); if (m < 1) return "menos de 1 min"; return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`; };
 async function showRanking() {
-  const wrap = modal({ cls: 'wide', title: '🏆 Ranking dos detetives', html: '<div class="center"><div class="spinner"></div></div>', buttons: [{ label: 'Fechar', cls: 'primary' }] });
+  const wrap = modal({ cls: 'wide', title: '🏆 Ranking', html: '<div class="center"><div class="spinner"></div></div>', buttons: [{ label: 'Fechar', cls: 'primary' }] });
   let rooms = [];
   try { rooms = await api.listFinished(); } catch (e) { $('.modal-body', wrap).innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const body = $('.modal-body', wrap);
+  body.innerHTML = `<div class="tabs"><button data-t="p" class="on">🕵️ Detetives</button><button data-t="c">📊 Casos</button></div><div id="tab-p"></div><div id="tab-c" hidden></div>`;
+  body.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => {
+    body.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === b));
+    $('#tab-p', body).hidden = b.dataset.t !== 'p'; $('#tab-c', body).hidden = b.dataset.t !== 'c';
+  }));
+  $('#tab-c', body).innerHTML = caseStatsHTML(rooms);
   const P = {}, recent = [];
   for (const r of rooms) {
     const s = r.state || {}; if ((s.order || []).length < 2) continue;   // sozinho não conta
@@ -998,13 +1043,40 @@ async function showRanking() {
   }
   const list = Object.values(P).sort((a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games || a.wrong - b.wrong);
   const medal = ['🥇', '🥈', '🥉'];
-  $('.modal-body', wrap).innerHTML = list.length ? `<table class="rank"><thead><tr><th></th><th>Detetive</th><th title="Casos resolvidos">🏆</th><th title="Partidas">Jogos</th><th title="Acusações erradas">❌</th><th title="Tempo médio para resolver">⏱️</th></tr></thead><tbody>
+  $('#tab-p', body).innerHTML = list.length ? `<table class="rank"><thead><tr><th></th><th>Detetive</th><th title="Casos resolvidos">🏆</th><th title="Partidas">Jogos</th><th title="Acusações erradas">❌</th><th title="Tempo médio para resolver">⏱️</th></tr></thead><tbody>
       ${list.map((p, i) => `<tr><td>${medal[i] || i + 1}</td><td><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</td><td><b>${p.wins}</b></td><td>${p.games}</td><td>${p.wrong}</td><td>${p.times.length ? fmtMin(p.times.reduce((a, b) => a + b, 0) / p.times.length) : '—'}</td></tr>`).join('')}
     </tbody></table>
     ${recent.length ? `<h4>Últimos casos resolvidos</h4><ul class="recent">${recent.slice(0, 8).map((x) => `<li><b>${esc(x.who)}</b> resolveu <i>${esc(x.c?.title || 'um caso')}</i> ${x.c?.level ? `<span class="stars">${'★'.repeat(x.c.level)}</span>` : ''}<small>${x.n} jogadores${x.t ? ' · ' + fmtMin(x.t) : ''}</small></li>`).join('')}</ul>` : ''}
     <p class="muted small">Contam só partidas terminadas com 2 ou mais detetives. Partidas sozinho (modo treino) ficam de fora. Quem usa o mesmo nome é contado como a mesma pessoa.</p>`
     : '<p>Nenhuma partida com 2 ou mais detetives terminou ainda. Partidas sozinho não contam para o ranking.</p>';
 }
+
+// estatísticas por caso: partidas, tempo e avaliações (aqui contam também as partidas sozinho)
+function caseStatsHTML(rooms) {
+  const C = {};
+  for (const r of rooms) {
+    const s = r.state || {}; if (!s.order) continue;
+    const title = s.caseTitle || caseOf(r.case_id)?.title || `Caso ${r.case_id}`;
+    const k = title; const c = C[k] || (C[k] = { title, level: s.caseLevel || caseOf(r.case_id)?.level, games: 0, solved: 0, times: [], rates: [], diff: { facil: 0, justo: 0, dificil: 0 }, comments: [], last: 0 });
+    c.games++; if (s.winner) c.solved++;
+    if (s.startedAt && s.endedAt) c.times.push({ ms: s.endedAt - s.startedAt, n: s.order.length });
+    c.last = Math.max(c.last, s.endedAt || 0);
+    Object.values(s.ratings || {}).forEach((x) => { c.rates.push(x.stars); if (c.diff[x.diff] !== undefined) c.diff[x.diff]++; if (x.comment) c.comments.push(`${x.name}: ${x.comment}`); });
+  }
+  const list = Object.values(C).sort((a, b) => (caseByTitle(a.title)?.id || 99) - (caseByTitle(b.title)?.id || 99));
+  if (!list.length) return '<p>Nenhuma partida terminou ainda.</p>';
+  return `<div class="cstats">${list.map((c) => {
+    const avg = c.rates.length ? c.rates.reduce((a, b) => a + b, 0) / c.rates.length : 0;
+    const tm = c.times.length ? fmtMin(c.times.reduce((a, b) => a + b.ms, 0) / c.times.length) : '—';
+    const id = caseByTitle(c.title)?.id;
+    return `<div class="cs"><div class="cs-h"><b>${id ? id + '. ' : ''}${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))}</b> <span class="stars">${'★'.repeat(c.level || 0)}</span></div>
+      <div class="cs-n">🎲 ${c.games} partida${c.games > 1 ? 's' : ''} · 🏆 ${c.solved} resolvida${c.solved !== 1 ? 's' : ''} · ⏱️ média ${tm}</div>
+      ${c.times.length ? `<div class="cs-t">Tempos: ${c.times.map((t) => `${fmtMin(t.ms)} (${t.n}👤)`).join(' · ')}</div>` : ''}
+      <div class="cs-n">${c.rates.length ? `Nota <span class="stars">${'★'.repeat(Math.round(avg))}${'☆'.repeat(5 - Math.round(avg))}</span> ${avg.toFixed(1)} (${c.rates.length} voto${c.rates.length > 1 ? 's' : ''}) · 😌 ${c.diff.facil} · 👌 ${c.diff.justo} · 🤯 ${c.diff.dificil}` : '<span class="muted">Sem avaliações ainda</span>'}</div>
+      ${c.comments.length ? `<details><summary>💬 ${c.comments.length} comentário${c.comments.length > 1 ? 's' : ''}</summary>${c.comments.map((x) => `<p class="cs-c">${esc(x)}</p>`).join('')}</details>` : ''}</div>`;
+  }).join('')}</div><p class="muted small">Aqui contam todas as partidas terminadas, inclusive as jogadas sozinho. 😌 fácil · 👌 na medida · 🤯 difícil demais.</p>`;
+}
+const caseByTitle = (t) => S.cases.find((c) => c.title === t);
 
 function showHistory() {
   modal({ title: '🧾 Histórico', html: `<div class="history">${(st().log || []).slice().reverse().map((x) => `<div>${esc(x.msg)}</div>`).join('')}</div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
@@ -1028,6 +1100,7 @@ function showRules() {
     <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
     <p><b>Som 🔊:</b> música ambiente e um som característico ao entrar em cada local. São 4 trilhas de música, que trocam sozinhas a cada caso. Dá para ligar e desligar no 🔊 do topo.</p>
     <p><b>Reações 😀:</b> durante a partida, toque no 😀 do topo e mande um emoji que aparece para todos por alguns segundos.</p>
+    <p><b>Avaliação ⭐:</b> no fim de cada partida, cada detetive dá uma nota ao caso e diz se foi fácil, na medida ou difícil demais. O tempo da partida fica registrado. Tudo aparece no Ranking, na aba 📊 Casos.</p>
     <p><b>Ranking 🏆:</b> conta vitórias, partidas, acusações erradas e tempo médio para resolver. Só valem partidas com 2 ou mais detetives: partidas sozinho (modo treino) não contam. Use sempre o mesmo nome para somar os pontos.</p>
     <p><b>Casos jogados ✔:</b> na escolha do caso, os que você já jogou neste aparelho aparecem com ✔.</p>
   </div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
