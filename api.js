@@ -62,6 +62,10 @@ export default {
     const { error } = await sb.from('notebooks').upsert({ room_id: roomId, user_id: uid, answers, notes }, { onConflict: 'room_id,user_id' });
     if (error) err(error);
   },
+  async importCases(secret, cases) {
+    const { data, error } = await sb.rpc('import_cases', { p_secret: secret, p_cases: cases });
+    if (error) err(error); return data;
+  },
   async revealSolution(roomId) {
     const { data, error } = await sb.rpc('reveal_solution', { p_room: roomId });
     if (error) err(error); return data;

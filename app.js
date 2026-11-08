@@ -32,7 +32,11 @@ const isHost = () => S.room?.host === S.uid;
 const myTurn = () => S.room?.status === 'playing' && currentId() === S.uid;
 const locName = (l) => LOCS[l]?.name || l;
 const stars = (c) => c?.level ? '★'.repeat(c.level) + '☆'.repeat(5 - c.level) : '';
-const caseOpt = (c, sel) => `<option value="${c.id}" ${sel ? 'selected' : ''}>${c.id}. ${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))} ${c.level ? '· ' + '★'.repeat(c.level) : ''}</option>`;
+const PLAYED_KEY = 'dvt-played-v2';
+const playedSet = () => { try { return new Set(JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]')); } catch { return new Set(); } };
+const playedTag = (c) => c.id + ':' + c.title;
+function markPlayed(c) { if (!c) return; try { const p = playedSet(); p.add(playedTag(c)); localStorage.setItem(PLAYED_KEY, JSON.stringify([...p])); } catch {} }
+const caseOpt = (c, sel) => `<option value="${c.id}" ${sel ? 'selected' : ''}>${playedSet().has(playedTag(c)) ? '✔ ' : ''}${c.id}. ${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))} ${c.level ? '· ' + '★'.repeat(c.level) : ''}</option>`;
 const caseInfo = (c) => c ? `<div class="case-info"><span class="stars" title="Dificuldade">${stars(c)}</span><p>${esc(c.summary || '')}</p></div>` : '';
 
 function log(s, msg) { s.log = s.log || []; s.log.push({ t: Date.now(), msg }); if (s.log.length > 40) s.log.shift(); }
@@ -148,8 +152,10 @@ function renderHome(errMsg) {
       <div class="row"><input id="code" maxlength="5" placeholder="Código" style="text-transform:uppercase"><button class="btn" id="go">Entrar</button></div>
     </div>
     <button class="link" id="rules">Como jogar</button>
+    <button class="link small muted" id="imp">⚙️ Atualizar casos</button>
   </div>`;
   $('#rules').onclick = showRules;
+  $('#imp').onclick = showImport;
   $('#case').onchange = (e) => { const c = caseOf(+e.target.value); $('#case-info').innerHTML = c ? caseInfo(c) : `<p class="muted small">O caso será sorteado entre os ${S.cases.length} disponíveis.</p>`; };
   $('#go').onclick = () => { const c = $('#code').value.trim(); if (c) location.search = '?sala=' + c.toUpperCase(); };
   $('#create').onclick = async () => {
@@ -160,6 +166,30 @@ function renderHome(errMsg) {
     $('#create').disabled = true;
     try { openRoom(await api.createRoom(n, color, cid)); } catch (e) { toast(e.message); $('#create').disabled = false; }
   };
+}
+
+// ---------- atualizar casos (arquivo cifrado no site + senha) ----------
+const b64 = (t) => Uint8Array.from(atob(t), (ch) => ch.charCodeAt(0));
+async function decryptCases(pw) {
+  const f = await (await fetch('cases.enc?v=' + Date.now(), { cache: 'no-store' })).json();
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(f.salt), iterations: f.iter, hash: 'SHA-256' }, base,
+    { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(f.iv) }, key, b64(f.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+function showImport() {
+  const wrap = modal({ title: '⚙️ Atualizar casos', html: `<p class="muted small">Carrega no servidor os casos mais novos do jogo. Só quem tem a senha dos casos consegue fazer isso.</p>
+    <label class="field"><span>Senha dos casos</span><input id="imp-pw" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+    <p class="small" id="imp-msg"></p>`, buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Atualizar', cls: 'primary', close: false, onClick: async () => {
+      const pw = $('#imp-pw', wrap).value.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(.{4})(?=.)/g, '$1-');
+      const msg = $('#imp-msg', wrap); if (!pw) return;
+      msg.textContent = 'Abrindo os casos...';
+      let cases; try { cases = await decryptCases(pw); } catch { msg.textContent = '❌ Senha incorreta.'; return; }
+      msg.textContent = `Enviando ${cases.length} casos ao servidor...`;
+      try { const n = await api.importCases(pw, cases); S.cases = await api.listCases(); msg.textContent = `✅ ${n} casos atualizados!`; setTimeout(() => { closeModal(); renderHome(); }, 1500); }
+      catch (e) { msg.textContent = /import_cases|function/i.test(e.message) ? '❌ Falta rodar no Supabase o SQL de atualização (passo 1).' : '❌ ' + e.message; }
+    } }] });
 }
 
 function renderJoin(room, errMsg) {
@@ -293,6 +323,7 @@ function renderGame() {
 
 function buildGame() {
   const c = caseOf(S.room.case_id);
+  markPlayed(c);
   app.innerHTML = `<div id="game">
     <header class="topbar">
       <button class="tb-case" id="b-case"><small>Caso ${c?.id}</small><span>${esc(c?.title)}</span></button>
@@ -804,6 +835,7 @@ async function showNotebook() {
       <div class="rh">${esc(g.label)} <small>${g.found}/${g.total} partes</small></div>
       ${g.parts.map((p) => `<div class="rp ${p.text ? '' : 'missing'}"><b>${p.roman})</b> ${p.text ? `${esc(p.text)} <i>${LOCS[p.loc].icon}</i>` : 'ainda não encontrada'}</div>`).join('')}
     </div>`).join('')}</div>` : ''}
+    ${c.suspects?.length ? `<h4>🕵️ Suspeitos</h4><ul class="suspects">${c.suspects.map((p) => `<li><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
     <h4>Pistas</h4>
     <div class="clues">${CLUE_LOCS.map((l) => `<div class="crow ${nb.clues[l] ? '' : 'empty'}"><div class="cl">${LOCS[l].icon} ${esc(LOCS[l].name)}</div>
       <div class="ct">${nb.clues[l] ? esc(nb.clues[l]).replace(/\n/g, '<br>') : '—'}</div></div>`).join('')}</div>
@@ -827,14 +859,15 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
 function groupRiddles(clues = {}) {
   const groups = {};
   for (const [loc, txt] of Object.entries(clues)) {
-    const m = /^(.+?)\s*\((\d+)\s*partes?\)\s*:?\s*\n([\s\S]*)$/.exec(txt || '');
-    if (!m) continue;
-    const label = m[1].trim(), total = +m[2];
-    const g = groups[label] || (groups[label] = { label, total, parts: {} });
-    for (const line of m[3].split('\n')) {
+    let g = null;   // um local pode ter várias charadas, em qualquer ordem, separadas por linha em branco
+    for (const line of String(txt || '').split('\n')) {
+      const h = /^(.+?)\s*\((\d+)\s*partes?\)\s*:?\s*$/.exec(line.trim());
+      if (h) { const label = h[1].trim(); g = groups[label] || (groups[label] = { label, total: +h[2], parts: {} }); continue; }
+      if (!line.trim()) { g = null; continue; }
+      if (!g) continue;
       const p = /^\s*([IVX]+)\)\s*(.*)$/.exec(line);
       if (p) g.parts[p[1]] = { text: p[2].trim(), loc };
-      else if (line.trim()) { const last = Object.keys(g.parts).pop(); if (last) g.parts[last].text += ' ' + line.trim(); }
+      else { const last = Object.keys(g.parts).pop(); if (last) g.parts[last].text += ' ' + line.trim(); }
     }
   }
   return Object.values(groups).map((g) => {

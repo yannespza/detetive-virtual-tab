@@ -217,3 +217,6 @@ details summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .case-info p { margin: 4px 0 0; font-family: var(--book); font-style: italic; color: var(--text); font-size: 14px; line-height: 1.45; }
 .stars { color: var(--brass2); letter-spacing: 2px; font-size: 15px; }
 .modal h2 .stars { color: #a8841c; font-size: 14px; margin-left: 6px; }
+.suspects{list-style:none;padding:0;margin:0 0 12px;display:grid;gap:4px}
+.suspects li{border-bottom:1px dashed rgba(43,32,22,.18);padding:5px 2px;display:flex;flex-wrap:wrap;gap:0 8px;align-items:baseline;color:var(--ink)}
+.suspects li span{color:#7a6345;font-size:.88em;font-style:italic}
