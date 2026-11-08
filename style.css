@@ -297,3 +297,4 @@ h4 small.muted { font-weight: 400; font-size: 11px; margin-left: 6px; font-famil
 .cs details summary { cursor: pointer; margin-top: 4px; color: #7a6345; font-weight: 600; }
 .cs-c { margin: 4px 0 0; font-family: var(--book); font-style: italic; }
 .rate .link { color: #7a6345; padding: 0 6px; }
+.share-app { width: 100%; margin-top: 4px; }

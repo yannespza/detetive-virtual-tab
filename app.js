@@ -178,10 +178,12 @@ function renderHome(errMsg) {
       <div class="row"><input id="code" maxlength="5" placeholder="Código" style="text-transform:uppercase"><button class="btn" id="go">Entrar</button></div>
     </div>
     <button class="link" id="rules">Como jogar</button>
+    <button class="btn share-app" id="share-app">📲 Compartilhar o jogo</button>
     <button class="link" id="rank">🏆 Ranking</button>
     <button class="link small muted" id="imp">⚙️ Atualizar casos</button>
   </div>`;
   $('#rank').onclick = showRanking;
+  $('#share-app').onclick = shareApp;
   $('#rules').onclick = showRules;
   $('#imp').onclick = showImport;
   casePicker($('#case-pick'), 0, true);
@@ -218,6 +220,21 @@ function showImport() {
       try { const n = await api.importCases(pw, cases); S.cases = await api.listCases(); msg.textContent = `✅ ${n} casos atualizados!`; setTimeout(() => { closeModal(); renderHome(); }, 1500); }
       catch (e) { msg.textContent = /import_cases|function/i.test(e.message) ? '❌ Falta rodar no Supabase o SQL de atualização (passo 1).' : '❌ ' + e.message; }
     } }] });
+}
+
+// compartilhar o jogo em si (não uma sala): quem recebe pode criar as próprias partidas
+function shareApp() {
+  const url = location.origin + location.pathname;
+  const msg = `Conheça o Detetive Virtual Tab 🔍: um jogo de investigação para jogar com os amigos, cada um no seu celular. Abra no navegador ou instale na tela inicial: ${url}`;
+  modal({ title: '📲 Compartilhar o jogo', html: `<p>Envie o jogo para quem você quiser. A pessoa poderá criar as próprias salas e convidar outros amigos.</p>
+    <p class="muted small">Para chamar alguém para <b>uma partida</b>, use o link da sala, que aparece na tela da sala.</p>
+    <div class="share">
+      <a class="btn wa" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+      <button class="btn" id="sa-copy">Copiar link</button>
+      ${navigator.share ? '<button class="btn" id="sa-share">Compartilhar</button>' : ''}
+    </div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
+  $('#sa-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link do jogo copiado!'); } catch { prompt('Copie o link:', url); } };
+  $('#sa-share') && ($('#sa-share').onclick = () => navigator.share({ title: 'Detetive Virtual Tab', text: msg, url }).catch(() => {}));
 }
 
 function renderJoin(room, errMsg) {
@@ -973,6 +990,7 @@ function showMenu() {
     { label: '📖 Como jogar', onClick: showRules },
     { label: '🧾 Histórico da partida', onClick: showHistory },
     { label: '🏆 Ranking', onClick: showRanking },
+    { label: '📲 Compartilhar o jogo', onClick: shareApp },
   ];
   if (isHost() && S.room.status === 'playing' && cid !== S.uid) btns.push({ label: `⏭️ Pular a vez de ${nameOf(cid)}`, onClick: async () => {
     if (await ask('Pular a vez', `Pular a vez de <b>${esc(nameOf(cid))}</b>? Use se a pessoa saiu ou travou.`, 'Pular')) commit((s) => { log(s, `O anfitrião pulou a vez de ${nameOf(cid)}.`); s.accuser = null; endTurn(s); });
@@ -1100,6 +1118,7 @@ function showRules() {
     <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
     <p><b>Som 🔊:</b> música ambiente e um som característico ao entrar em cada local. São 4 trilhas de música, que trocam sozinhas a cada caso. Dá para ligar e desligar no 🔊 do topo.</p>
     <p><b>Reações 😀:</b> durante a partida, toque no 😀 do topo e mande um emoji que aparece para todos por alguns segundos.</p>
+    <p><b>Convites:</b> o link da sala chama alguém para aquela partida, e qualquer jogador que já está na sala pode repassá-lo. Só o anfitrião (quem criou a sala) escolhe o caso e começa a partida. Para mandar o jogo a alguém, para que a pessoa crie as próprias salas, use "📲 Compartilhar o jogo", na tela inicial ou no menu ☰.</p>
     <p><b>Avaliação ⭐:</b> no fim de cada partida, cada detetive dá uma nota ao caso e diz se foi fácil, na medida ou difícil demais. O tempo da partida fica registrado. Tudo aparece no Ranking, na aba 📊 Casos.</p>
     <p><b>Ranking 🏆:</b> conta vitórias, partidas, acusações erradas e tempo médio para resolver. Só valem partidas com 2 ou mais detetives: partidas sozinho (modo treino) não contam. Use sempre o mesmo nome para somar os pontos.</p>
     <p><b>Casos jogados ✔:</b> na escolha do caso, os que você já jogou neste aparelho aparecem com ✔.</p>
