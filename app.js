@@ -239,13 +239,13 @@ function renderLobby() {
     <div class="card">
       <h3>Detetives (${s.players.length}/6)</h3>
       <ul class="plist">${s.players.map((p) => `<li><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${p.id === r.host ? ' <em>anfitrião</em>' : ''}${p.id === S.uid ? ' <em>(você)</em>' : ''}</li>`).join('')}</ul>
-      <p class="muted small">${s.players.length < 3 ? 'Com 2 jogadores, as chaves mestras começam no Chaveiro.' : 'Com 3 ou mais jogadores, cada um começa com uma chave mestra.'}</p>
+      <p class="muted small">${s.players.length < 3 ? 'Com até 2 jogadores, as chaves mestras começam no Chaveiro.' : 'Com 3 ou mais jogadores, cada um começa com uma chave mestra.'}</p>
     </div>
     <div class="card">
       <h3>Caso</h3>
       ${isHost() ? `<select id="case">${S.cases.map((x) => `<option value="${x.id}" ${x.id === r.case_id ? 'selected' : ''}>Caso ${x.id} · ${esc(x.title)}</option>`).join('')}</select>`
         : `<p><b>Caso ${c?.id} · ${esc(c?.title)}</b></p>`}
-      ${isHost() ? `<button class="btn primary big" id="start" ${s.players.length < 2 ? 'disabled' : ''}>${s.players.length < 2 ? 'Aguardando mais 1 jogador...' : 'Começar a partida'}</button>`
+      ${isHost() ? `<button class="btn primary big" id="start">${s.players.length < 2 ? 'Começar sozinho (modo treino)' : 'Começar a partida'}</button>`
         : `<p class="waiting">Aguardando o anfitrião começar a partida...</p>`}
     </div>
     <button class="link" id="rules">Como jogar</button> <button class="link" id="leave">Sair da sala</button>
@@ -716,27 +716,52 @@ async function sealDoor() {
 }
 
 // ---------- acusação ----------
+// ---------- conferência automática das respostas ----------
+const normTxt = (t) => ' ' + String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+const hasKey = (txt, k) => txt.includes(' ' + normTxt(k).trim());
+function grade(answer, item) {
+  const txt = normTxt(answer);
+  if (!txt.trim()) return { st: 'wrong', msg: 'Sem resposta.' };
+  if (!item.need) return { st: 'manual' };
+  if ((item.deny || []).some((k) => hasKey(txt, k))) return { st: 'wrong', msg: 'Resposta errada ou com mais de uma opção.' };
+  const hits = item.need.filter((g) => g.some((k) => hasKey(txt, k))).length;
+  if (hits === item.need.length) return { st: 'ok', msg: 'Correta!' };
+  if (hits > 0) return { st: 'partial', msg: 'Incompleta: faltou alguma coisa importante.' };
+  return { st: 'wrong', msg: 'Errada.' };
+}
+
 async function accuse() {
+  if (!S.nb) S.nb = await api.getNotebook(S.room.id).catch(() => ({ clues: {}, answers: {}, notes: '' }));
+  const c = caseOf(S.room.case_id), ans = S.nb.answers || {};
+  const wrap = modal({ title: '🕵️ Sua solução', cls: 'wide', dismiss: false,
+    html: `<p class="muted small">Revise suas respostas. Elas não precisam ser iguais às do jogo, mas precisam ter as informações certas. <b>Se alguma estiver errada ou incompleta, você sai do jogo.</b></p>
+      ${c.questions.map((q) => `<label class="field"><span>${q.key}) ${esc(q.label)} <small>${esc(q.ask)}</small></span><input data-a="${q.key}" value="${esc(ans[q.key] || '')}"></label>`).join('')}`,
+    buttons: [{ label: 'Voltar', cls: 'ghost' }, { label: '🔍 Conferir respostas', cls: 'primary', close: false, onClick: () => submitAccusation(wrap) }] });
+}
+async function submitAccusation(wrap) {
   const c = caseOf(S.room.case_id);
-  if (!(await ask('Apresentar solução', `Você vai ver a solução oficial e comparar com suas respostas. <b>Se errar qualquer item, você sai do jogo</b> e os outros continuam. Tem certeza?`, 'Ver solução'))) return;
+  const answers = { ...(S.nb.answers || {}) };
+  wrap.querySelectorAll('[data-a]').forEach((i) => (answers[i.dataset.a] = i.value.trim()));
+  const empty = c.questions.filter((q) => !answers[q.key]);
+  if (empty.length && !(await ask('Respostas em branco', `Você deixou ${empty.length} item(ns) em branco. Item em branco conta como errado. Conferir mesmo assim?`, 'Conferir'))) { accuse(); return; }
+  closeModal();
+  S.nb.answers = answers; flushNotebook();
   const ok = await commit((s) => { if (s.order[s.turn.idx] !== S.uid) return false; s.accuser = S.uid; s.turn.phase = 'after'; log(s, `🕵️ ${nameOf(S.uid)} está conferindo a solução...`); });
   if (!ok) return;
   let sol;
   try { sol = await api.revealSolution(S.room.id); } catch (e) { return toast(e.message); }
-  const ans = S.nb?.answers || {};
-  const rows = c.questions.map((q) => {
-    const off = sol.solution.find((x) => x.key === q.key);
-    return `<div class="cmp"><div class="q">${q.key}) ${esc(q.label)}</div>
-      <div class="mine"><small>Sua resposta</small>${esc(ans[q.key] || '—')}</div>
-      <div class="off"><small>Solução</small>${esc(off?.answer)}</div></div>`;
-  }).join('');
-  modal({ title: '🔒 Solução (só você está vendo)', cls: 'wide', dismiss: false,
-    html: `<p class="muted small">Compare com calma. Não precisa ser com as mesmas palavras, mas tem que ser a mesma ideia em todos os itens.</p>${rows}
+  const res = c.questions.map((q) => { const off = sol.solution.find((x) => x.key === q.key) || {}; return { q, off, g: grade(answers[q.key], off) }; });
+  const manual = res.some((r) => r.g.st === 'manual');
+  const allOk = res.every((r) => r.g.st === 'ok');
+  const icon = { ok: '✅', partial: '⚠️', wrong: '❌', manual: '❔' };
+  modal({ title: allOk ? '🎉 Todas corretas!' : '🔒 Resultado (só você está vendo)', cls: 'wide', dismiss: false,
+    html: `${res.map(({ q, off, g }) => `<div class="cmp g-${g.st}"><div class="q">${icon[g.st]} ${q.key}) ${esc(q.label)} <em>${esc(g.msg || '')}</em></div>
+        <div class="mine"><small>Sua resposta</small>${esc(answers[q.key] || '—')}</div>
+        <div class="off"><small>Solução oficial</small>${esc(off.answer)}</div></div>`).join('')}
       <details><summary>Como tudo aconteceu</summary><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div></details>`,
-    buttons: [
-      { label: '❌ Errei', cls: 'danger', onClick: () => accuseResult(false) },
-      { label: '✔️ Acertei tudo!', cls: 'primary', onClick: () => accuseResult(true) },
-    ] });
+    buttons: manual ? [{ label: '❌ Errei', cls: 'danger', onClick: () => accuseResult(false) }, { label: '✔️ Acertei', cls: 'primary', onClick: () => accuseResult(true) }]
+      : allOk ? [{ label: '🏆 Confirmar acerto', cls: 'primary', onClick: () => accuseResult(true) }]
+      : [{ label: '❌ Errei, sair do jogo', cls: 'danger', onClick: () => accuseResult(false) }] });
 }
 async function accuseResult(right) {
   if (right) {
@@ -808,11 +833,15 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
 function groupRiddles(clues = {}) {
   const groups = {};
   for (const [loc, txt] of Object.entries(clues)) {
-    const m = /^(.+?)\s*\((\d+)\s*partes?\)\s*:?\s*\n\s*([IVX]+)\)\s*([\s\S]*)$/.exec(txt || '');
+    const m = /^(.+?)\s*\((\d+)\s*partes?\)\s*:?\s*\n([\s\S]*)$/.exec(txt || '');
     if (!m) continue;
     const label = m[1].trim(), total = +m[2];
     const g = groups[label] || (groups[label] = { label, total, parts: {} });
-    g.parts[m[3]] = { text: m[4].trim(), loc };
+    for (const line of m[3].split('\n')) {
+      const p = /^\s*([IVX]+)\)\s*(.*)$/.exec(line);
+      if (p) g.parts[p[1]] = { text: p[2].trim(), loc };
+      else if (line.trim()) { const last = Object.keys(g.parts).pop(); if (last) g.parts[last].text += ' ' + line.trim(); }
+    }
   }
   return Object.values(groups).map((g) => {
     const parts = ROMAN.slice(0, g.total).map((r) => ({ roman: r, ...(g.parts[r] || {}) }));

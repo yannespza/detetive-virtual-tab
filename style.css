@@ -208,3 +208,8 @@ details summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .rp { font-size: 14px; padding: 3px 0; }
 .rp i { font-style: normal; font-size: 12px; }
 .rp.missing { color: #b5a07a; font-style: italic; }
+.cmp.g-ok { border-color: #3f8f4f; background: #eef8ef; }
+.cmp.g-partial { border-color: #d29b1c; background: #fff6df; }
+.cmp.g-wrong { border-color: #b8322f; background: #fdeceb; }
+.cmp .q em { font-family: var(--sans); font-style: normal; font-size: 12px; font-weight: 600; margin-left: 4px; }
+.cmp.g-ok .q em { color: #2e7a3c; } .cmp.g-partial .q em { color: #9a6b00; } .cmp.g-wrong .q em { color: #a3241f; }
