@@ -36,7 +36,36 @@ const PLAYED_KEY = 'dvt-played-v2';
 const playedSet = () => { try { return new Set(JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]')); } catch { return new Set(); } };
 const playedTag = (c) => c.id + ':' + c.title;
 function markPlayed(c) { if (!c) return; try { const p = playedSet(); p.add(playedTag(c)); localStorage.setItem(PLAYED_KEY, JSON.stringify([...p])); } catch {} }
-const caseOpt = (c, sel) => `<option value="${c.id}" ${sel ? 'selected' : ''}>${playedSet().has(playedTag(c)) ? '✔ ' : ''}${c.id}. ${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))} ${c.level ? '· ' + '★'.repeat(c.level) : ''}</option>`;
+// seletor compacto de caso: ‹ Caso › e toque no meio abre a lista
+function casePicker(el, value, allowRandom, onChange) {
+  const opts = [...(allowRandom ? [0] : []), ...S.cases.map((c) => c.id)];
+  let v = value;
+  const draw = () => {
+    const c = caseOf(v), played = c && playedSet().has(playedTag(c));
+    el.innerHTML = `<div class="cpick">
+      <button type="button" class="cp-arr" data-d="-1" aria-label="Caso anterior">‹</button>
+      <button type="button" class="cp-mid" id="cp-open">${c
+        ? `<small>Caso ${c.id} · <span class="stars">${'★'.repeat(c.level || 0)}</span>${played ? ' · <span class="cp-done">✔ jogado</span>' : ''}</small><b>${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))}</b>`
+        : `<small>${S.cases.length} casos</small><b>🎲 Sortear um caso</b>`}<i>▾</i></button>
+      <button type="button" class="cp-arr" data-d="1" aria-label="Próximo caso">›</button></div>
+      ${c ? caseInfo(c) : `<p class="muted small cp-hint">O caso será sorteado entre os ${S.cases.length} disponíveis.</p>`}
+      <input type="hidden" id="case" value="${v}">`;
+    el.querySelectorAll('.cp-arr').forEach((b) => (b.onclick = () => set(opts[(opts.indexOf(v) + +b.dataset.d + opts.length) % opts.length])));
+    $('#cp-open', el).onclick = openList;
+  };
+  const set = (nv) => { if (nv === v) return; v = nv; draw(); onChange?.(v); };
+  const openList = () => {
+    const p = playedSet();
+    const wrap = modal({ cls: 'cases-modal', title: 'Escolha o caso', html: `<div class="clist">
+      ${allowRandom ? `<button class="crow2 ${v === 0 ? 'on' : ''}" data-id="0"><span class="cn">🎲</span><span class="ct2">Sortear um caso</span></button>` : ''}
+      ${S.cases.map((c) => `<button class="crow2 ${c.id === v ? 'on' : ''}" data-id="${c.id}"><span class="cn">${c.id}</span>
+        <span class="ct2">${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))}</span><span class="stars">${'★'.repeat(c.level || 0)}</span>${p.has(playedTag(c)) ? '<span class="cp-done">✔</span>' : '<span class="cp-done"></span>'}</button>`).join('')}
+    </div>`, buttons: [{ label: 'Fechar', cls: 'ghost' }] });
+    wrap.querySelectorAll('[data-id]').forEach((b) => (b.onclick = () => { closeModal(); set(+b.dataset.id); }));
+    wrap.querySelector('.crow2.on')?.scrollIntoView({ block: 'center' });
+  };
+  draw();
+}
 const caseInfo = (c) => c ? `<div class="case-info"><span class="stars" title="Dificuldade">${stars(c)}</span><p>${esc(c.summary || '')}</p></div>` : '';
 
 function log(s, msg) { s.log = s.log || []; s.log.push({ t: Date.now(), msg }); if (s.log.length > 40) s.log.shift(); }
@@ -140,11 +169,7 @@ function renderHome(errMsg) {
       ${errMsg ? `<p class="err">${esc(errMsg)}</p>` : ''}
       <label class="field"><span>Seu nome</span><input id="name" maxlength="20" value="${esc(name)}" placeholder="Ex.: Watson"></label>
       <div class="field"><span>Cor do seu peão</span>${colorPicker([], localStorage.getItem('dvt-color'))}</div>
-      <label class="field"><span>Caso a investigar</span><select id="case">
-        <option value="0">🎲 Sortear um caso</option>
-        ${S.cases.map((c) => caseOpt(c)).join('')}
-      </select></label>
-      <div id="case-info"><p class="muted small">O caso será sorteado entre os ${S.cases.length} disponíveis.</p></div>
+      <div class="field"><span>Caso a investigar</span><div id="case-pick"></div></div>
       <button class="btn primary big" id="create">Criar sala</button>
     </div>
     <div class="card small">
@@ -156,7 +181,7 @@ function renderHome(errMsg) {
   </div>`;
   $('#rules').onclick = showRules;
   $('#imp').onclick = showImport;
-  $('#case').onchange = (e) => { const c = caseOf(+e.target.value); $('#case-info').innerHTML = c ? caseInfo(c) : `<p class="muted small">O caso será sorteado entre os ${S.cases.length} disponíveis.</p>`; };
+  casePicker($('#case-pick'), 0, true);
   $('#go').onclick = () => { const c = $('#code').value.trim(); if (c) location.search = '?sala=' + c.toUpperCase(); };
   $('#create').onclick = async () => {
     const n = $('#name').value.trim(); if (!n) return toast('Digite seu nome');
@@ -279,9 +304,8 @@ function renderLobby() {
     </div>
     <div class="card">
       <h3>Caso</h3>
-      ${isHost() ? `<select id="case">${S.cases.map((x) => caseOpt(x, x.id === r.case_id)).join('')}</select>`
-        : `<p><b>Caso ${c?.id} · ${esc(c?.title)}</b></p>`}
-      ${caseInfo(c)}
+      ${isHost() ? `<div id="case-pick"></div>`
+        : `<p><b>Caso ${c?.id} · ${esc(c?.title)}</b></p>${caseInfo(c)}`}
       ${isHost() ? `<button class="btn primary big" id="start">${s.players.length < 2 ? 'Começar sozinho (modo treino)' : 'Começar a partida'}</button>`
         : `<p class="waiting">Aguardando o anfitrião começar a partida...</p>`}
     </div>
@@ -292,7 +316,7 @@ function renderLobby() {
   $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado!'); } catch { prompt('Copie o link:', link); } };
   $('#share') && ($('#share').onclick = () => navigator.share({ title: 'Detetive Virtual Tab', text: msg, url: link }).catch(() => {}));
   if (isHost()) {
-    $('#case').onchange = (e) => commit(() => true, { case_id: +e.target.value });
+    casePicker($('#case-pick'), r.case_id, false, (id) => commit(() => true, { case_id: id }));
     $('#start').onclick = startGame;
   }
 }
