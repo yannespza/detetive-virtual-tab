@@ -180,12 +180,15 @@ function renderHome(errMsg) {
     <button class="link" id="rules">Como jogar</button>
     <button class="btn share-app" id="share-app">📲 Compartilhar o jogo</button>
     <button class="link" id="rank">🏆 Ranking</button>
-    <button class="link small muted" id="imp">⚙️ Atualizar casos</button>
+    ${isAdmin() ? '<button class="link small muted" id="imp">⚙️ Atualizar casos</button>' : ''}
   </div>`;
+  // acesso escondido do administrador: 5 toques seguidos na lupa do logo
+  let taps = 0, tapT = 0;
+  $('.logo-badge').onclick = () => { const now = Date.now(); taps = now - tapT < 800 ? taps + 1 : 1; tapT = now; if (taps >= 5) { taps = 0; if (!isAdmin()) showAdminLogin(); } };
   $('#rank').onclick = showRanking;
   $('#share-app').onclick = shareApp;
   $('#rules').onclick = showRules;
-  $('#imp').onclick = showImport;
+  $('#imp') && ($('#imp').onclick = showImport);
   casePicker($('#case-pick'), 0, true);
   $('#go').onclick = () => { const c = $('#code').value.trim(); if (c) location.search = '?sala=' + c.toUpperCase(); };
   $('#create').onclick = async () => {
@@ -208,11 +211,24 @@ async function decryptCases(pw) {
   const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(f.iv) }, key, b64(f.data));
   return JSON.parse(new TextDecoder().decode(plain));
 }
+const isAdmin = () => { try { return localStorage.getItem('dvt-admin') === '1'; } catch { return false; } };
+const normPw = (v) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(.{4})(?=.)/g, '$1-');
+function showAdminLogin() {
+  const wrap = modal({ title: '🔐 Acesso do administrador', html: `<label class="field"><span>Senha dos casos</span><input id="adm-pw" autocomplete="off" autocapitalize="characters" spellcheck="false"></label><p class="small" id="adm-msg"></p>`,
+    buttons: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Entrar', cls: 'primary', close: false, onClick: async () => {
+      const pw = normPw($('#adm-pw', wrap).value); if (!pw) return;
+      $('#adm-msg', wrap).textContent = 'Conferindo...';
+      try { await decryptCases(pw); } catch { $('#adm-msg', wrap).textContent = '❌ Senha incorreta.'; return; }
+      try { localStorage.setItem('dvt-admin', '1'); } catch {}
+      closeModal(); toast('Modo administrador ativado neste aparelho.'); renderHome();
+    } }] });
+}
 function showImport() {
   const wrap = modal({ title: '⚙️ Atualizar casos', html: `<p class="muted small">Carrega no servidor os casos mais novos do jogo. Só quem tem a senha dos casos consegue fazer isso.</p>
     <label class="field"><span>Senha dos casos</span><input id="imp-pw" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
-    <p class="small" id="imp-msg"></p>`, buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Atualizar', cls: 'primary', close: false, onClick: async () => {
-      const pw = $('#imp-pw', wrap).value.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(.{4})(?=.)/g, '$1-');
+    <p class="small" id="imp-msg"></p>
+    <button class="link small" id="adm-out">Sair do modo administrador neste aparelho</button>`, buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Atualizar', cls: 'primary', close: false, onClick: async () => {
+      const pw = normPw($('#imp-pw', wrap).value);
       const msg = $('#imp-msg', wrap); if (!pw) return;
       msg.textContent = 'Abrindo os casos...';
       let cases; try { cases = await decryptCases(pw); } catch { msg.textContent = '❌ Senha incorreta.'; return; }
@@ -220,6 +236,7 @@ function showImport() {
       try { const n = await api.importCases(pw, cases); S.cases = await api.listCases(); msg.textContent = `✅ ${n} casos atualizados!`; setTimeout(() => { closeModal(); renderHome(); }, 1500); }
       catch (e) { msg.textContent = /import_cases|function/i.test(e.message) ? '❌ Falta rodar no Supabase o SQL de atualização (passo 1).' : '❌ ' + e.message; }
     } }] });
+  $('#adm-out', wrap).onclick = () => { try { localStorage.removeItem('dvt-admin'); } catch {} closeModal(); renderHome(); };
 }
 
 // compartilhar o jogo em si (não uma sala): quem recebe pode criar as próprias partidas
