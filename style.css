@@ -240,3 +240,37 @@ details summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .crow2 .ct2 { font-family: var(--serif); }
 .crow2 .stars { color: #a8841c; font-size: 12px; letter-spacing: 0; }
 .crow2 .cp-done { color: var(--green); }
+/* suspeitos marcáveis */
+.suspects li { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.suspects .sus-ico { font-style: normal; width: 18px; text-align: center; flex: none; }
+.suspects .sus-x b, .suspects .sus-x span { text-decoration: line-through; opacity: .45; }
+.suspects .sus-x .sus-ico::before { content: '✖'; color: var(--red); }
+.suspects .sus-star { background: rgba(201,162,39,.22); border-radius: 6px; }
+.suspects .sus-star .sus-ico::before { content: '⭐'; }
+.suspects .sus-none .sus-ico::before { content: '○'; color: #a8957a; }
+h4 small.muted { font-weight: 400; font-size: 11px; margin-left: 6px; font-family: var(--sans); }
+/* locais visitados */
+.loc.visited::after { content: '✔'; position: absolute; top: 2px; right: 3px; font-size: 11px; line-height: 15px; width: 15px; text-align: center; border-radius: 50%; background: var(--green); color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+/* como chegar à resposta */
+.cmp .why { margin-top: 6px; font-size: 13px; }
+.cmp .why summary { cursor: pointer; color: #7a6345; font-weight: 600; }
+.cmp .why p { margin: 6px 0 0; font-family: var(--book); line-height: 1.45; }
+/* ranking */
+.rank { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rank th { font-size: 12px; color: #7a6345; text-align: center; padding: 4px; border-bottom: 1px solid rgba(43,32,22,.2); }
+.rank td { text-align: center; padding: 7px 4px; border-bottom: 1px dashed rgba(43,32,22,.15); }
+.rank td:nth-child(2) { text-align: left; font-family: var(--serif); white-space: nowrap; }
+.rank .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.recent { list-style: none; padding: 0; margin: 0; }
+.recent li { padding: 6px 0; border-bottom: 1px dashed rgba(43,32,22,.15); font-size: 14px; }
+.recent small { display: block; color: #7a6345; }
+.recent .stars { color: #a8841c; font-size: 11px; margin-left: 4px; }
+/* reações */
+.react-bar { position: fixed; z-index: 60; top: calc(56px + env(safe-area-inset-top)); right: 8px; display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; padding: 6px; background: #2b2118; border: 1px solid #5a4a36; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.react-bar button { font-size: 24px; width: 46px; height: 46px; border: 0; background: none; border-radius: 10px; cursor: pointer; }
+.react-bar button:active { background: rgba(201,162,39,.2); }
+.react-pop { position: fixed; z-index: 70; bottom: 30%; display: flex; flex-direction: column; align-items: center; pointer-events: none; animation: reactUp 3.2s ease-out forwards; }
+.react-pop .re { font-size: 46px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.5)); }
+.react-pop .rn { font-size: 12px; color: #fff; padding: 2px 8px; border-radius: 9px; font-weight: 700; text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+@keyframes reactUp { 0% { transform: translateY(30px) scale(.6); opacity: 0; } 12% { transform: translateY(0) scale(1.1); opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(-140px) scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .react-pop { animation: none; } }

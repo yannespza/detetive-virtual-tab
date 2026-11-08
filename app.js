@@ -177,8 +177,10 @@ function renderHome(errMsg) {
       <div class="row"><input id="code" maxlength="5" placeholder="Código" style="text-transform:uppercase"><button class="btn" id="go">Entrar</button></div>
     </div>
     <button class="link" id="rules">Como jogar</button>
+    <button class="link" id="rank">🏆 Ranking</button>
     <button class="link small muted" id="imp">⚙️ Atualizar casos</button>
   </div>`;
+  $('#rank').onclick = showRanking;
   $('#rules').onclick = showRules;
   $('#imp').onclick = showImport;
   casePicker($('#case-pick'), 0, true);
@@ -245,7 +247,7 @@ function renderJoin(room, errMsg) {
 async function openRoom(room) {
   localStorage.setItem('dvt-room', room.id);
   if (location.search) history.replaceState(null, '', location.pathname);
-  S.room = room; S.seenMove = room.state.lastMove?.id ?? null; S.seenRoll = room.state.turn?.rollId ?? null;
+  S.room = room; S.seenReact = room.state.react?.id ?? null; S.seenMove = room.state.lastMove?.id ?? null; S.seenRoll = room.state.turn?.rollId ?? null;
   S.unsub?.(); S.unsub = api.subscribe(room.id, (r) => applyRoom(r));
   if (room.status !== 'lobby') S.nb = await api.getNotebook(room.id).catch(() => null);
   app.innerHTML = ''; render();
@@ -273,6 +275,7 @@ function applyRoom(r) {
   if (s.turn && s.turn.rollId !== S.seenRoll) { S.seenRoll = s.turn.rollId; if (s.turn.dice && s.order[s.turn.idx] !== S.uid) animateDiceRemote(s.turn.dice); }
   const curNow = s.order ? s.order[s.turn.idx] : null;
   if (r.status === 'playing' && curNow === S.uid && s.turn.phase === 'start' && prevTurnKey !== `${s.turn.idx}:${curNow}:start`) notifyTurn();
+  if (s.react && s.react.id !== S.seenReact) { S.seenReact = s.react.id; if (Date.now() - s.react.t < 15000) showReaction(s.react); }
   if (s.lastMove && s.lastMove.id !== S.seenMove) { S.seenMove = s.lastMove.id; if (s.lastMove.player !== S.uid || !S.selfAnimated) animateMove(s.lastMove); S.selfAnimated = false; }
   render();
 }
@@ -333,6 +336,7 @@ async function startGame() {
     s.pos = {}; s.hasKey = {}; s.hasBadge = {}; s.hasLeft = {}; s.teleport = {}; s.eliminated = {};
     ids.forEach((id) => { s.pos[id] = { loc: 'sherlock', cell: null }; s.hasKey[id] = many; s.hasBadge[id] = true; });
     s.keysAtChaveiro = many ? 0 : ids.length;
+    s.startedAt = Date.now();
     s.seals = {}; s.badgesAtSY = []; s.accuser = null; s.winner = null; s.moveSeq = 0; s.lastMove = null; s.log = [];
     log(s, `A investigação começou! Ordem: ${ids.map((id) => s.players.find((p) => p.id === id).name).join(' → ')}.`);
   }, { status: 'playing' });
@@ -351,6 +355,7 @@ function buildGame() {
   app.innerHTML = `<div id="game">
     <header class="topbar">
       <button class="tb-case" id="b-case"><small>Caso ${c?.id}</small><span>${esc(c?.title)}</span></button>
+      <button class="icon-btn" id="b-react" title="Reagir">😀</button>
       <button class="icon-btn" id="b-snd" title="Som">${Sound.icon()}</button>
       <button class="icon-btn" id="b-nb" title="Caderneta">📒<i id="nb-count"></i></button>
       <button class="icon-btn" id="b-menu" title="Menu">☰</button>
@@ -362,7 +367,9 @@ function buildGame() {
   </div>`;
   $('#b-case').onclick = showCase; $('#b-nb').onclick = showNotebook; $('#b-menu').onclick = showMenu;
   $('#b-snd').onclick = showSound;
+  $('#b-react').onclick = toggleReactBar;
   buildBoard();
+  if (!S.nb) api.getNotebook(S.room.id).then((nb) => { S.nb = S.nb || nb; updateBoard(); updatePlayersBadge(); }).catch(() => {});
   if (!S.introShown && (st().log || []).length <= 2) { S.introShown = true; showCase(); }
 }
 
@@ -431,7 +438,11 @@ function updateBoard() {
     d.innerHTML = owner ? '<b>🛡️</b>' : '';
   });
   const extras = { chaveiro: s.keysAtChaveiro ? `🔑×${s.keysAtChaveiro}` : '', scotland: (s.badgesAtSY || []).map((o) => `<i style="color:${colorOf(o)}">🛡️</i>`).join('') };
-  document.querySelectorAll('.loc').forEach((l) => { $('.loc-extra', l).innerHTML = extras[l.dataset.loc] || ''; });
+  const seen = S.nb?.clues || {};
+  document.querySelectorAll('.loc').forEach((l) => {
+    $('.loc-extra', l).innerHTML = extras[l.dataset.loc] || '';
+    l.classList.toggle('visited', !!seen[l.dataset.loc]);
+  });
   // destaques
   document.querySelectorAll('.hl').forEach((e) => e.classList.remove('hl'));
   const tgt = targets();
@@ -565,7 +576,7 @@ async function fetchClue(loc, show) {
     const txt = await api.readClue(S.room.id, loc);
     S.nb = S.nb || { clues: {}, answers: {}, notes: '' }; S.nb.clues[loc] = txt;
     if (show) showClue(loc, txt);
-    updatePlayersBadge();
+    updatePlayersBadge(); updateBoard();
   } catch (e) { toast('Erro ao ler a pista: ' + e.message); }
 }
 function notifyTurn() {
@@ -806,23 +817,24 @@ async function submitAccusation(wrap) {
   modal({ title: allOk ? '🎉 Todas corretas!' : '🔒 Resultado (só você está vendo)', cls: 'wide', dismiss: false,
     html: `${res.map(({ q, off, g }) => `<div class="cmp g-${g.st}"><div class="q">${icon[g.st]} ${q.key}) ${esc(q.label)} <em>${esc(g.msg || '')}</em></div>
         <div class="mine"><small>Sua resposta</small>${esc(answers[q.key] || '—')}</div>
-        <div class="off"><small>Solução oficial</small>${esc(off.answer)}</div></div>`).join('')}
+        <div class="off"><small>Solução oficial</small>${esc(off.answer)}</div>${whyBox(off)}</div>`).join('')}
       <details><summary>Como tudo aconteceu</summary><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div></details>`,
     buttons: manual ? [{ label: '❌ Errei', cls: 'danger', onClick: () => accuseResult(false) }, { label: '✔️ Acertei', cls: 'primary', onClick: () => accuseResult(true) }]
       : allOk ? [{ label: '🏆 Confirmar acerto', cls: 'primary', onClick: () => accuseResult(true) }]
       : [{ label: '❌ Errei, sair do jogo', cls: 'danger', onClick: () => accuseResult(false) }] });
 }
+const whyBox = (x) => x?.why ? `<details class="why"><summary>🔎 Como chegar a esta resposta</summary><p>${esc(x.why)}</p></details>` : '';
 async function accuseResult(right) {
   if (right) {
     const answers = { ...(S.nb?.answers || {}) };
-    await commit((s) => { s.winner = S.uid; s.winnerAnswers = answers; s.accuser = null; log(s, `🏆 ${nameOf(S.uid)} resolveu o caso!`); }, { status: 'finished' });
+    await commit((s) => { s.winner = S.uid; s.winnerAnswers = answers; s.accuser = null; s.endedAt = Date.now(); log(s, `🏆 ${nameOf(S.uid)} resolveu o caso!`); }, { status: 'finished' });
   } else {
     let finished = false;
     await commit((s) => {
       s.eliminated[S.uid] = true; s.accuser = null; s.pos[S.uid] = { loc: 'out', cell: null };
       log(s, `❌ ${nameOf(S.uid)} errou a solução e saiu do jogo.`);
       finished = s.order.every((id) => s.eliminated[id]);
-      if (finished) log(s, 'Todos erraram. O culpado escapou!'); else endTurn(s);
+      if (finished) { log(s, 'Todos erraram. O culpado escapou!'); s.endedAt = Date.now(); } else endTurn(s);
     }, {});
     if (st().order.every((id) => st().eliminated[id])) await commit(() => true, { status: 'finished' });
   }
@@ -835,7 +847,7 @@ async function showEnd() {
     html: `<p><b>Caso ${c.id} · ${esc(c.title)}</b></p>
       ${sol ? sol.solution.map((x) => `<div class="cmp"><div class="q">${x.key}) ${esc(x.label)}</div>
         ${s.winner ? `<div class="mine"><small>Resposta de ${esc(nameOf(s.winner))}</small>${esc(s.winnerAnswers?.[x.key] || '—')}</div>` : ''}
-        <div class="off"><small>Solução oficial</small>${esc(x.answer)}</div></div>`).join('')
+        <div class="off"><small>Solução oficial</small>${esc(x.answer)}</div>${whyBox(x)}</div>`).join('')
         + `<h4 class="sol-h">Como tudo aconteceu</h4><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div>` : '<p>Não foi possível carregar a solução.</p>'}`,
     buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Nova partida', cls: 'primary', onClick: leaveRoom }] });
 }
@@ -859,7 +871,7 @@ async function showNotebook() {
       <div class="rh">${esc(g.label)} <small>${g.found}/${g.total} partes</small></div>
       ${g.parts.map((p) => `<div class="rp ${p.text ? '' : 'missing'}"><b>${p.roman})</b> ${p.text ? `${esc(p.text)} <i>${LOCS[p.loc].icon}</i>` : 'ainda não encontrada'}</div>`).join('')}
     </div>`).join('')}</div>` : ''}
-    ${c.suspects?.length ? `<h4>🕵️ Suspeitos</h4><ul class="suspects">${c.suspects.map((p) => `<li><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
+    ${c.suspects?.length ? `<h4>🕵️ Suspeitos <small class="muted">toque para riscar ou destacar</small></h4><ul class="suspects">${c.suspects.map((p, i) => `<li data-sus="${i}" class="sus-${(nb.answers?._sus || {})[p.name] || 'none'}"><i class="sus-ico"></i><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
     <h4>Pistas</h4>
     <div class="clues">${CLUE_LOCS.map((l) => `<div class="crow ${nb.clues[l] ? '' : 'empty'}"><div class="cl">${LOCS[l].icon} ${esc(LOCS[l].name)}</div>
       <div class="ct">${nb.clues[l] ? esc(nb.clues[l]).replace(/\n/g, '<br>') : '—'}</div></div>`).join('')}</div>
@@ -877,6 +889,15 @@ async function showNotebook() {
     clearTimeout(saveTimer); saveTimer = setTimeout(flushNotebook, 700);
   };
   wrap.querySelectorAll('input,textarea').forEach((i) => i.addEventListener('input', onInput));
+  // suspeitos: normal → riscado → principal → normal
+  const NEXT = { none: 'x', x: 'star', star: 'none' };
+  wrap.querySelectorAll('[data-sus]').forEach((li) => (li.onclick = () => {
+    const name = c.suspects[+li.dataset.sus].name;
+    nb.answers = nb.answers || {}; const m = (nb.answers._sus = { ...(nb.answers._sus || {}) });
+    const nv = NEXT[m[name] || 'none']; if (nv === 'none') delete m[name]; else m[name] = nv;
+    li.className = 'sus-' + nv;
+    $('#saved', wrap).textContent = 'Salvando...'; clearTimeout(saveTimer); saveTimer = setTimeout(flushNotebook, 500);
+  }));
 }
 // junta as partes das charadas ("Pista do X (N partes): I) ...") encontradas em locais diferentes
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -911,6 +932,7 @@ function showMenu() {
   const btns = [
     { label: '📖 Como jogar', onClick: showRules },
     { label: '🧾 Histórico da partida', onClick: showHistory },
+    { label: '🏆 Ranking', onClick: showRanking },
   ];
   if (isHost() && S.room.status === 'playing' && cid !== S.uid) btns.push({ label: `⏭️ Pular a vez de ${nameOf(cid)}`, onClick: async () => {
     if (await ask('Pular a vez', `Pular a vez de <b>${esc(nameOf(cid))}</b>? Use se a pessoa saiu ou travou.`, 'Pular')) commit((s) => { log(s, `O anfitrião pulou a vez de ${nameOf(cid)}.`); s.accuser = null; endTurn(s); });
@@ -928,6 +950,59 @@ function showSound() {
   const upd = () => { Sound.set($('#sw-m', wrap).checked, $('#sw-f', wrap).checked); $('#b-snd').textContent = Sound.icon(); };
   $('#sw-m', wrap).onchange = upd; $('#sw-f', wrap).onchange = upd;
 }
+// ---------- reações rápidas ----------
+const EMOJIS = ['🤔', '😱', '👏', '😂', '🕵️', '🙄', '🔥', '🤫'];
+function toggleReactBar() {
+  const old = $('.react-bar'); if (old) { old.remove(); return; }
+  const bar = document.createElement('div'); bar.className = 'react-bar';
+  bar.innerHTML = EMOJIS.map((e) => `<button data-e="${e}">${e}</button>`).join('');
+  bar.onclick = async (ev) => {
+    const e = ev.target.closest('[data-e]')?.dataset.e; if (!e) return;
+    bar.remove();
+    if (Date.now() - (S.lastReact || 0) < 2500) return toast('Calma, detetive! Espere um instante.');
+    S.lastReact = Date.now();
+    const id = Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    S.seenReact = id; showReaction({ by: S.uid, e, id, t: Date.now() });
+    await commit((s) => { s.react = { by: S.uid, e, id, t: Date.now() }; });
+  };
+  document.body.appendChild(bar);
+  setTimeout(() => bar.remove(), 6000);
+}
+function showReaction(r) {
+  const el = document.createElement('div'); el.className = 'react-pop';
+  el.style.left = 12 + Math.random() * 55 + '%';
+  el.innerHTML = `<span class="re">${esc(r.e)}</span><span class="rn" style="background:${colorOf(r.by)}">${esc(nameOf(r.by))}</span>`;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 3200);
+}
+
+// ---------- ranking (só partidas com 2 ou mais jogadores) ----------
+const nkey = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+const fmtMin = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`; };
+async function showRanking() {
+  const wrap = modal({ cls: 'wide', title: '🏆 Ranking dos detetives', html: '<div class="center"><div class="spinner"></div></div>', buttons: [{ label: 'Fechar', cls: 'primary' }] });
+  let rooms = [];
+  try { rooms = await api.listFinished(); } catch (e) { $('.modal-body', wrap).innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const P = {}, recent = [];
+  for (const r of rooms) {
+    const s = r.state || {}; if ((s.order || []).length < 2) continue;   // sozinho não conta
+    for (const id of s.order) {
+      const pl = (s.players || []).find((x) => x.id === id); if (!pl) continue;
+      const k = nkey(pl.name); const p = P[k] || (P[k] = { name: pl.name, color: pl.color, games: 0, wins: 0, wrong: 0, times: [] });
+      p.games++; if (s.eliminated?.[id]) p.wrong++;
+      if (s.winner === id) { p.wins++; if (s.startedAt && s.endedAt) p.times.push(s.endedAt - s.startedAt); }
+    }
+    if (s.winner) recent.push({ who: (s.players || []).find((x) => x.id === s.winner)?.name, c: caseOf(r.case_id), t: s.startedAt && s.endedAt ? s.endedAt - s.startedAt : null, n: s.order.length });
+  }
+  const list = Object.values(P).sort((a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games || a.wrong - b.wrong);
+  const medal = ['🥇', '🥈', '🥉'];
+  $('.modal-body', wrap).innerHTML = list.length ? `<table class="rank"><thead><tr><th></th><th>Detetive</th><th title="Casos resolvidos">🏆</th><th title="Partidas">Jogos</th><th title="Acusações erradas">❌</th><th title="Tempo médio para resolver">⏱️</th></tr></thead><tbody>
+      ${list.map((p, i) => `<tr><td>${medal[i] || i + 1}</td><td><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</td><td><b>${p.wins}</b></td><td>${p.games}</td><td>${p.wrong}</td><td>${p.times.length ? fmtMin(p.times.reduce((a, b) => a + b, 0) / p.times.length) : '—'}</td></tr>`).join('')}
+    </tbody></table>
+    ${recent.length ? `<h4>Últimos casos resolvidos</h4><ul class="recent">${recent.slice(0, 8).map((x) => `<li><b>${esc(x.who)}</b> resolveu <i>${esc(x.c?.title || 'um caso')}</i> ${x.c?.level ? `<span class="stars">${'★'.repeat(x.c.level)}</span>` : ''}<small>${x.n} jogadores${x.t ? ' · ' + fmtMin(x.t) : ''}</small></li>`).join('')}</ul>` : ''}
+    <p class="muted small">Contam só partidas terminadas com 2 ou mais detetives. Partidas sozinho (modo treino) ficam de fora. Quem usa o mesmo nome é contado como a mesma pessoa.</p>`
+    : '<p>Nenhuma partida com 2 ou mais detetives terminou ainda. Partidas sozinho não contam para o ranking.</p>';
+}
+
 function showHistory() {
   modal({ title: '🧾 Histórico', html: `<div class="history">${(st().log || []).slice().reverse().map((x) => `<div>${esc(x.msg)}</div>`).join('')}</div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
 }
@@ -942,7 +1017,15 @@ function showRules() {
     <p><b>Chave mestra 🔑:</b> abre uma entrada lacrada. O distintivo vai para a Scotland Yard e a chave volta ao Chaveiro. Para recuperar, vá até lá. Com 2 jogadores, as chaves começam no Chaveiro; com 3 ou mais, cada um começa com a sua.</p>
     <p><b>Estação de Carruagens 🐎:</b> ao entrar, escolha: ler a pista dela (e na próxima vez ir de carruagem a qualquer local, sem dados) ou ir de carruagem agora para outro local e ler a pista de lá.</p>
     <p><b>Ponte:</b> o rio só pode ser atravessado pelas pontes.</p>
-    <p><b>Solução:</b> quando achar que sabe tudo, volte à Casa de Sherlock Holmes e toque em "Apresentar solução". Só você vê a solução oficial. Se acertou tudo, confirme e todos verão. Se errou, você sai do jogo e guarda segredo.</p>
+    <p><b>Charadas:</b> as partes de uma charada ficam em locais diferentes, e um mesmo local pode guardar partes de charadas diferentes. A caderneta junta as partes sozinha, na seção 🧩 Charadas.</p>
+    <p><b>Locais visitados ✔:</b> no tabuleiro, os locais cuja pista você já leu ganham um ✔. Só você vê os seus.</p>
+    <p><b>Caderneta 📒:</b> traz o caso, as pistas, as charadas e a lista de suspeitos. Toque num suspeito para riscá-lo; toque de novo para marcá-lo como principal suspeito ⭐; mais um toque volta ao normal. Só você vê.</p>
+    <p><b>Solução:</b> quando achar que sabe tudo, volte à Casa de Sherlock Holmes e toque em "Apresentar solução". Antes de conferir, dá para revisar e corrigir as respostas. Só você vê a solução oficial.</p>
+    <p><b>Conferência:</b> as respostas não precisam ser iguais às do jogo. Basta a palavra certa: um nome (só o primeiro nome já vale), um lugar ou um objeto. Erros de digitação leves são aceitos. Verde = certa, amarelo = incompleta, vermelho = errada. Responder mais de um suspeito na mesma pergunta conta como errado. Só com tudo verde aparece o botão de acerto; se errar, você sai do jogo e guarda segredo.</p>
+    <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
+    <p><b>Reações 😀:</b> durante a partida, toque no 😀 do topo e mande um emoji que aparece para todos por alguns segundos.</p>
+    <p><b>Ranking 🏆:</b> conta vitórias, partidas, acusações erradas e tempo médio para resolver. Só valem partidas com 2 ou mais detetives: partidas sozinho (modo treino) não contam. Use sempre o mesmo nome para somar os pontos.</p>
+    <p><b>Casos jogados ✔:</b> na escolha do caso, os que você já jogou neste aparelho aparecem com ✔.</p>
   </div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
 }
 

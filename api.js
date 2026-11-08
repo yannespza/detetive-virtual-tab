@@ -62,6 +62,10 @@ export default {
     const { error } = await sb.from('notebooks').upsert({ room_id: roomId, user_id: uid, answers, notes }, { onConflict: 'room_id,user_id' });
     if (error) err(error);
   },
+  async listFinished() {
+    const { data, error } = await sb.from('rooms').select('id,case_id,state,created_at').eq('status', 'finished').order('created_at', { ascending: false }).limit(1000);
+    if (error) err(error); return data;
+  },
   async importCases(secret, cases) {
     const { data, error } = await sb.rpc('import_cases', { p_secret: secret, p_cases: cases });
     if (error) err(error); return data;
