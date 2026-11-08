@@ -1,25 +1,35 @@
 // Tabuleiro: grade de 16 x 26 casas. Locais ocupam blocos 4x4.
 export const COLS = 16, ROWS = 26;
-export const RIVER_ROW = 15;
-export const BRIDGES = [[5, 15], [10, 15]];
+export const RIVER_ROW = 16;
+export const BRIDGES = [[3, 16], [10, 16]];
 
+// Locais: rect = [x, y, largura, altura]; doors = casas de entrada (com seta)
 export const LOCS = {
-  sherlock:   { name: 'Casa de Sherlock Holmes', short: 'Sherlock', icon: '🔍', rect: [1, 1, 4, 4], doors: [[3, 5]], hue: '#5b4636' },
-  bar:        { name: 'Bar',             icon: '🍺', rect: [6, 1, 4, 4],  doors: [[7, 5]],            hue: '#8a4b2a' },
-  farmacia:   { name: 'Farmácia',        icon: '💊', rect: [11, 1, 4, 4], doors: [[12, 5]],           hue: '#2f7a6d' },
-  museu:      { name: 'Museu',           icon: '🏛️', rect: [1, 6, 4, 4],  doors: [[0, 8], [5, 7]],    hue: '#6a5a8c' },
-  penhores:   { name: 'Casa de Penhores', short: 'Penhores', icon: '💍', rect: [6, 6, 4, 4], doors: [[8, 10]], hue: '#9a6b2f' },
-  teatro:     { name: 'Teatro',          icon: '🎭', rect: [11, 6, 4, 4], doors: [[10, 8]],           hue: '#8c2f3f' },
-  livraria:   { name: 'Livraria',        icon: '📚', rect: [1, 11, 4, 4], doors: [[3, 10]],           hue: '#4a6a8c' },
-  parque:     { name: 'Parque',          icon: '🌳', rect: [6, 11, 4, 4], doors: [[5, 13], [10, 12]], hue: '#3d7a3a' },
-  banco:      { name: 'Banco',           icon: '🏦', rect: [11, 11, 4, 4], doors: [[15, 12]],         hue: '#7a6a2a' },
-  chaveiro:   { name: 'Chaveiro',        icon: '🔑', rect: [1, 16, 4, 4], doors: [[2, 20]],           hue: '#8c6a2f' },
-  docas:      { name: 'Docas',           icon: '⚓', rect: [6, 16, 4, 4], doors: [[5, 17]],           hue: '#2f5a7a' },
-  charutaria: { name: 'Charutaria',      icon: '🚬', rect: [11, 16, 4, 4], doors: [[10, 18]],         hue: '#6b3f2a' },
-  scotland:   { name: 'Scotland Yard',   icon: '👮', rect: [1, 21, 4, 4], doors: [[3, 20]],           hue: '#2a3f6b' },
-  hotel:      { name: 'Hotel',           icon: '🏨', rect: [6, 21, 4, 4], doors: [[5, 23], [10, 22]], hue: '#7a2f5a' },
-  estacao:    { name: 'Estação de Carruagens', short: 'Estação', icon: '🐎', rect: [11, 21, 4, 4], doors: [[12, 20]], hue: '#5a6b2a' },
+  sherlock:   { name: 'Casa de Sherlock Holmes', short: 'Sherlock', icon: '🔍', rect: [0, 0, 4, 3], doors: [[2, 3]], hue: '#5b4636' },
+  bar:        { name: 'Bar',             icon: '🍺', rect: [5, 0, 4, 3],  doors: [[4, 1]],            hue: '#8a4b2a' },
+  farmacia:   { name: 'Farmácia',        icon: '💊', rect: [10, 1, 3, 4], doors: [[9, 3]],            hue: '#2f7a6d' },
+  scotland:   { name: 'Scotland Yard',   icon: '👮', rect: [13, 0, 3, 3], doors: [[14, 3]],           hue: '#2a3f6b' },
+  museu:      { name: 'Museu',           icon: '🏛️', rect: [0, 5, 4, 5],  doors: [[4, 7], [2, 10]],   hue: '#6a5a8c' },
+  penhores:   { name: 'Casa de Penhores', short: 'Penhores', icon: '💍', rect: [6, 5, 3, 3], doors: [[7, 8]], hue: '#9a6b2f' },
+  teatro:     { name: 'Teatro',          icon: '🎭', rect: [11, 6, 5, 4], doors: [[10, 8]],           hue: '#8c2f3f' },
+  parque:     { name: 'Parque',          icon: '🌳', rect: [5, 10, 4, 4], doors: [[4, 11], [9, 12]],  hue: '#3d7a3a' },
+  livraria:   { name: 'Livraria',        icon: '📚', rect: [0, 12, 3, 4], doors: [[3, 14]],           hue: '#4a6a8c' },
+  banco:      { name: 'Banco',           icon: '🏦', rect: [11, 11, 5, 3], doors: [[13, 14]],         hue: '#7a6a2a' },
+  docas:      { name: 'Docas',           icon: '⚓', rect: [5, 17, 5, 4], doors: [[4, 19]],           hue: '#2f5a7a' },
+  charutaria: { name: 'Charutaria',      icon: '🚬', rect: [11, 17, 3, 3], doors: [[10, 18]],         hue: '#6b3f2a' },
+  chaveiro:   { name: 'Chaveiro',        icon: '🔑', rect: [0, 18, 3, 3], doors: [[1, 17]],           hue: '#8c6a2f' },
+  hotel:      { name: 'Hotel',           icon: '🏨', rect: [5, 22, 5, 3], doors: [[4, 23], [10, 23]], hue: '#7a2f5a' },
+  estacao:    { name: 'Estação de Carruagens', short: 'Estação', icon: '🐎', rect: [12, 21, 4, 4], doors: [[13, 20]], hue: '#5a6b2a' },
 };
+// áreas decorativas onde não se anda (telhados, jardins, cais)
+export const DECOR = [
+  { rect: [0, 22, 3, 3], icon: '🏚️' },
+  { rect: [14, 17, 2, 3], icon: '🌫️' },
+  { rect: [6, 3, 2, 1], icon: '' },
+  { rect: [5, 15, 4, 1], icon: '' },
+  { rect: [12, 15, 4, 1], icon: '' },
+  { rect: [15, 4, 1, 2], icon: '' },
+];
 
 // os 14 locais com pista (na ordem da caderneta)
 export const CLUE_LOCS = ['farmacia', 'banco', 'docas', 'hotel', 'chaveiro', 'museu', 'charutaria',
@@ -34,10 +44,11 @@ export function locAt(x, y) {
   return null;
 }
 export function isBridge(x, y) { return BRIDGES.some(([bx, by]) => bx === x && by === y); }
+export function decorAt(x, y) { return DECOR.find((d) => inRect(x, y, d.rect)); }
 export function isPath(x, y) {
   if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return false;
   if (y === RIVER_ROW) return isBridge(x, y);
-  return !locAt(x, y);
+  return !locAt(x, y) && !decorAt(x, y);
 }
 export function doorDir(loc, i) { // direção da seta (para dentro do local)
   const [dx, dy] = LOCS[loc].doors[i];

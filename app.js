@@ -1,4 +1,5 @@
-import { COLS, ROWS, LOCS, CLUE_LOCS, UNSEALABLE, key, isPath, isBridge, locAt, doorDir, doorId, reachable } from './board.js';
+import { COLS, ROWS, RIVER_ROW, LOCS, DECOR, CLUE_LOCS, UNSEALABLE, key, isPath, isBridge, locAt, doorDir, doorId, reachable } from './board.js';
+import Sound from './sound.js';
 
 const api = window.__API__ || (await import('./api.js')).default;
 
@@ -200,6 +201,7 @@ function applyRoom(r) {
   if (r.version < S.room.version) return;
   const same = r.version === S.room.version;
   const prevStatus = S.room.status;
+  const prevTurnKey = S.room.state?.order ? `${S.room.state.turn.idx}:${S.room.state.order[S.room.state.turn.idx]}:${S.room.state.turn.phase}` : null;
   S.room = r;
   if (same) return;
   if (prevStatus === 'lobby' && r.status === 'playing') {
@@ -208,6 +210,8 @@ function applyRoom(r) {
   }
   const s = r.state;
   if (s.turn && s.turn.rollId !== S.seenRoll) { S.seenRoll = s.turn.rollId; if (s.turn.dice && s.order[s.turn.idx] !== S.uid) animateDiceRemote(s.turn.dice); }
+  const curNow = s.order ? s.order[s.turn.idx] : null;
+  if (r.status === 'playing' && curNow === S.uid && s.turn.phase === 'start' && prevTurnKey !== `${s.turn.idx}:${curNow}:start`) notifyTurn();
   if (s.lastMove && s.lastMove.id !== S.seenMove) { S.seenMove = s.lastMove.id; if (s.lastMove.player !== S.uid || !S.selfAnimated) animateMove(s.lastMove); S.selfAnimated = false; }
   render();
 }
@@ -285,6 +289,7 @@ function buildGame() {
   app.innerHTML = `<div id="game">
     <header class="topbar">
       <button class="tb-case" id="b-case"><small>Caso ${c?.id}</small><span>${esc(c?.title)}</span></button>
+      <button class="icon-btn" id="b-snd" title="Som">${Sound.icon()}</button>
       <button class="icon-btn" id="b-nb" title="Caderneta">📒<i id="nb-count"></i></button>
       <button class="icon-btn" id="b-menu" title="Menu">☰</button>
     </header>
@@ -294,6 +299,7 @@ function buildGame() {
     <div id="panel" class="panel"></div>
   </div>`;
   $('#b-case').onclick = showCase; $('#b-nb').onclick = showNotebook; $('#b-menu').onclick = showMenu;
+  $('#b-snd').onclick = showSound;
   buildBoard();
   if (!S.introShown && (st().log || []).length <= 2) { S.introShown = true; showCase(); }
 }
@@ -304,11 +310,15 @@ function buildBoard() {
   const b = $('#board'); b.style.width = cs * COLS + 'px'; b.style.height = cs * ROWS + 'px'; b.style.setProperty('--cs', cs + 'px');
   let h = '';
   // rio
-  h += `<div class="river" style="left:0;top:${15 * cs}px;width:${COLS * cs}px;height:${cs}px"><span>~ Rio Tâmisa ~</span></div>`;
+  h += `<div class="river" style="left:0;top:${RIVER_ROW * cs}px;width:${COLS * cs}px;height:${cs}px"><span>~ Rio Tâmisa ~</span></div>`;
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
     if (!isPath(x, y)) continue;
     h += `<div class="cell${isBridge(x, y) ? ' bridge' : ''}" data-k="${x},${y}" style="left:${x * cs}px;top:${y * cs}px">${isBridge(x, y) ? '<i>Ponte</i>' : ''}</div>`;
   }
+  DECOR.forEach((d) => {
+    const [rx, ry, rw, rh] = d.rect;
+    h += `<div class="decor" style="left:${rx * cs + 2}px;top:${ry * cs + 2}px;width:${rw * cs - 4}px;height:${rh * cs - 4}px">${d.icon || ''}</div>`;
+  });
   for (const [id, l] of Object.entries(LOCS)) {
     const [rx, ry, rw, rh] = l.rect;
     h += `<div class="loc loc-${id}" data-loc="${id}" style="left:${rx * cs + 2}px;top:${ry * cs + 2}px;width:${rw * cs - 4}px;height:${rh * cs - 4}px;--hue:${l.hue}">
@@ -330,7 +340,8 @@ function pawnXY(id) {
   const [rx, ry, rw, rh] = LOCS[p.loc].rect;
   const here = s.order.filter((o) => s.pos[o]?.loc === p.loc);
   const i = here.indexOf(id), col = i % 3, row = Math.floor(i / 3);
-  return [rx * cs + (rw * cs) * (0.2 + col * 0.3), ry * cs + (rh * cs) * (0.62 + row * 0.24)];
+  const top = (ry + rh) * cs - cs * (row === 0 ? (here.length > 3 ? 1.3 : 0.65) : 0.6);
+  return [rx * cs + (rw * cs) * (0.2 + col * 0.3), top];
 }
 
 function updateBoard() {
@@ -475,8 +486,6 @@ function enterLoc(s, id, loc, door, useKey) {
   }
   s.pos[id] = { loc, cell: null };
   log(s, `${n} entrou em ${locName(loc)}.`);
-  if (loc === 'chaveiro' && !s.hasKey[id] && s.keysAtChaveiro > 0) { s.keysAtChaveiro--; s.hasKey[id] = true; log(s, `${n} pegou uma chave mestra 🔑`); }
-  if (loc === 'scotland' && s.badgesAtSY.includes(id)) { s.badgesAtSY = s.badgesAtSY.filter((b) => b !== id); s.hasBadge[id] = true; log(s, `${n} recuperou seu distintivo 🛡️`); }
 }
 
 function endTurn(s) {
@@ -497,6 +506,20 @@ async function fetchClue(loc, show) {
     updatePlayersBadge();
   } catch (e) { toast('Erro ao ler a pista: ' + e.message); }
 }
+function notifyTurn() {
+  if (S.room.state.order.length < 2) return;
+  Sound.sfx('turn');
+  try { navigator.vibrate?.([120, 80, 120]); } catch {}
+  document.querySelector('.turn-pop')?.remove();
+  const pop = document.createElement('div'); pop.className = 'turn-pop';
+  pop.innerHTML = `<div class="tp-card"><div class="tp-ico">🔔</div><b>É a sua vez!</b>
+    <div class="tp-act"><button class="btn ghost" data-a="stay">Continuar lendo</button><button class="btn primary" data-a="go">Jogar agora</button></div></div>`;
+  pop.querySelector('[data-a=go]').onclick = () => { if (S.nb && $('#modal .notebook')) flushNotebook(); closeModal(); pop.remove(); };
+  pop.querySelector('[data-a=stay]').onclick = () => pop.remove();
+  document.body.appendChild(pop);
+  if (!$('#modal')) setTimeout(() => pop.remove(), 2500);
+}
+
 function showClue(loc, txt) {
   const l = LOCS[loc], none = /^\(Sem pista/.test(txt);
   modal({ cls: 'clue', title: `${l.icon} ${esc(l.name)}`,
@@ -512,7 +535,7 @@ function dieSVG(n) {
   return `<svg viewBox="0 0 100 100" class="die"><rect x="4" y="4" width="92" height="92" rx="18"/>${P[n].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="9"/>`).join('')}</svg>`;
 }
 async function spinDice(final) {
-  S.rolling = { a: 1, b: 1 }; const end = Date.now() + 750;
+  S.rolling = { a: 1, b: 1 }; const end = Date.now() + 750; Sound.sfx('dice');
   while (Date.now() < end) { S.rolling = { a: rnd6(), b: rnd6() }; updatePanel(); await sleep(80); }
   S.rolling = null; updatePanel(); updateBoard();
 }
@@ -536,6 +559,7 @@ async function animateMove(m, sBefore) {
   const cs = S.cs;
   try {
     if (m.kind === 'carriage') {
+      Sound.sfx('estacao');
       el.classList.add('fly'); await sleep(350);
       S.animating.delete(id); updateBoard(); await sleep(50);
       el.classList.remove('fly'); return;
@@ -549,6 +573,7 @@ async function animateMove(m, sBefore) {
   } finally {
     S.animating.delete(id);
     updateBoard(); updatePanel();
+    if (m.to?.loc) Sound.sfx(m.to.loc);
   }
 }
 
@@ -610,6 +635,7 @@ function updatePanel() {
       msg = '<b>Sua vez!</b>' + (loc ? ` Você está em ${esc(locName(loc))}.` : '');
       btns.push(['🎲 Jogar os dados', 'primary', rollDice]);
     }
+    pickupButtons(btns, loc);
     if (loc && !UNSEALABLE.includes(loc) && s.hasBadge[me]) btns.push(['🛡️ Lacrar entrada', '', sealDoor]);
     if (loc === 'sherlock' && s.hasLeft[me]) btns.push(['🕵️ Apresentar solução', 'gold', accuse]);
   } else if (ph === 'move') {
@@ -624,6 +650,7 @@ function updatePanel() {
   } else if (ph === 'after') {
     msg = loc ? `Você está em <b>${esc(locName(loc))}</b>.` : '';
     if (loc && CLUE_LOCS.includes(loc) && S.nb?.clues?.[loc]) btns.push(['📜 Ver pista', 'ghost', () => showClue(loc, S.nb.clues[loc])]);
+    pickupButtons(btns, loc);
     if (loc === 'sherlock' && s.hasLeft[me]) btns.push(['🕵️ Apresentar solução', 'gold', accuse]);
     btns.push(['✅ Terminar a vez', 'primary', finishTurn]);
   }
@@ -631,6 +658,28 @@ function updatePanel() {
   p.innerHTML = `<div class="pmsg">${msg}</div>${ph === 'move' ? diceRow(s.turn.dice) : ''}<div class="actions"></div>`;
   const a = $('.actions', p);
   btns.forEach(([label, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = label; b.disabled = S.busy; b.onclick = fn; a.appendChild(b); });
+}
+
+function pickupButtons(btns, loc) {
+  const s = st(), me = S.uid;
+  if (loc === 'chaveiro' && !s.hasKey[me] && s.keysAtChaveiro > 0) btns.push(['🔑 Pegar chave mestra', 'gold', pickKey]);
+  if (loc === 'scotland' && (s.badgesAtSY || []).includes(me)) btns.push(['🛡️ Pegar meu distintivo', 'gold', pickBadge]);
+}
+async function pickKey() {
+  const ok = await commit((s) => {
+    const me = S.uid;
+    if (s.order[s.turn.idx] !== me || s.pos[me]?.loc !== 'chaveiro' || s.hasKey[me] || s.keysAtChaveiro <= 0) return false;
+    s.keysAtChaveiro--; s.hasKey[me] = true; log(s, `${nameOf(me)} pegou uma chave mestra 🔑`);
+  });
+  if (ok) Sound.sfx('chaveiro');
+}
+async function pickBadge() {
+  const ok = await commit((s) => {
+    const me = S.uid;
+    if (s.order[s.turn.idx] !== me || s.pos[me]?.loc !== 'scotland' || !s.badgesAtSY.includes(me)) return false;
+    s.badgesAtSY = s.badgesAtSY.filter((b) => b !== me); s.hasBadge[me] = true; log(s, `${nameOf(me)} recuperou seu distintivo 🛡️`);
+  });
+  if (ok) Sound.sfx('scotland');
 }
 
 async function passTurn() { await commit((s) => { if (s.order[s.turn.idx] !== S.uid) return false; log(s, `${nameOf(S.uid)} passou a vez.`); endTurn(s); }); }
@@ -684,7 +733,7 @@ async function accuse() {
   }).join('');
   modal({ title: '🔒 Solução (só você está vendo)', cls: 'wide', dismiss: false,
     html: `<p class="muted small">Compare com calma. Não precisa ser com as mesmas palavras, mas tem que ser a mesma ideia em todos os itens.</p>${rows}
-      <details><summary>Como o crime aconteceu</summary><p>${esc(sol.text)}</p></details>`,
+      <details><summary>Como tudo aconteceu</summary><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div></details>`,
     buttons: [
       { label: '❌ Errei', cls: 'danger', onClick: () => accuseResult(false) },
       { label: '✔️ Acertei tudo!', cls: 'primary', onClick: () => accuseResult(true) },
@@ -692,7 +741,8 @@ async function accuse() {
 }
 async function accuseResult(right) {
   if (right) {
-    await commit((s) => { s.winner = S.uid; s.accuser = null; log(s, `🏆 ${nameOf(S.uid)} resolveu o caso!`); }, { status: 'finished' });
+    const answers = { ...(S.nb?.answers || {}) };
+    await commit((s) => { s.winner = S.uid; s.winnerAnswers = answers; s.accuser = null; log(s, `🏆 ${nameOf(S.uid)} resolveu o caso!`); }, { status: 'finished' });
   } else {
     let finished = false;
     await commit((s) => {
@@ -710,7 +760,10 @@ async function showEnd() {
   const s = st(), c = caseOf(S.room.case_id);
   modal({ cls: 'wide', title: s.winner ? `🏆 ${esc(nameOf(s.winner))} resolveu o caso!` : '🕯️ O culpado escapou...',
     html: `<p><b>Caso ${c.id} · ${esc(c.title)}</b></p>
-      ${sol ? sol.solution.map((x) => `<div class="cmp"><div class="q">${x.key}) ${esc(x.label)}</div><div class="off">${esc(x.answer)}</div></div>`).join('') + `<p class="story">${esc(sol.text)}</p>` : '<p>Não foi possível carregar a solução.</p>'}`,
+      ${sol ? sol.solution.map((x) => `<div class="cmp"><div class="q">${x.key}) ${esc(x.label)}</div>
+        ${s.winner ? `<div class="mine"><small>Resposta de ${esc(nameOf(s.winner))}</small>${esc(s.winnerAnswers?.[x.key] || '—')}</div>` : ''}
+        <div class="off"><small>Solução oficial</small>${esc(x.answer)}</div></div>`).join('')
+        + `<h4 class="sol-h">Como tudo aconteceu</h4><div class="story">${esc(sol.text).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div>` : '<p>Não foi possível carregar a solução.</p>'}`,
     buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Nova partida', cls: 'primary', onClick: leaveRoom }] });
 }
 
@@ -764,6 +817,12 @@ function showMenu() {
   btns.push({ label: '🚪 Sair da partida', onClick: async () => { if (await ask('Sair', 'Sair desta partida neste aparelho? Você pode voltar pelo link da sala.', 'Sair')) leaveRoom(); } });
   const wrap = modal({ title: `Sala ${esc(S.room.code)}`, html: `<div class="loclist" id="mb"></div>`, buttons: [{ label: 'Fechar', cls: 'ghost' }] });
   btns.forEach((b) => { const e = document.createElement('button'); e.className = 'btn'; e.textContent = b.label; e.onclick = () => { closeModal(); b.onClick(); }; $('#mb', wrap).appendChild(e); });
+}
+function showSound() {
+  const wrap = modal({ title: '🔊 Som', html: `<label class="switch"><input type="checkbox" id="sw-m" ${Sound.music ? 'checked' : ''}><span>Música ambiente</span></label>
+    <label class="switch"><input type="checkbox" id="sw-f" ${Sound.fx ? 'checked' : ''}><span>Sons dos locais e dos dados</span></label>`, buttons: [{ label: 'Pronto', cls: 'primary' }] });
+  const upd = () => { Sound.set($('#sw-m', wrap).checked, $('#sw-f', wrap).checked); $('#b-snd').textContent = Sound.icon(); };
+  $('#sw-m', wrap).onchange = upd; $('#sw-f', wrap).onchange = upd;
 }
 function showHistory() {
   modal({ title: '🧾 Histórico', html: `<div class="history">${(st().log || []).slice().reverse().map((x) => `<div>${esc(x.msg)}</div>`).join('')}</div>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
