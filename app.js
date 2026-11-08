@@ -137,7 +137,16 @@ async function boot() {
       <button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
     return;
   }
+  await loadAccess();
   const params = new URLSearchParams(location.search);
+  const invite = params.get('convite');
+  if (invite) {
+    history.replaceState(null, '', location.pathname);
+    if (S.access && !S.access.has) {
+      try { S.access = await api.redeemCode(invite, localStorage.getItem('dvt-name') || ''); toast(`🎉 Convite aceito! Você tem ${S.access.games_left} partidas.`, 4000); }
+      catch (e) { renderHome(/usado/i.test(e.message) ? 'Este convite já foi usado por outra pessoa. Peça um convite novo.' : 'Convite inválido. Peça um convite novo.'); return; }
+    } else if (S.access?.has) toast('Você já tem acesso ao jogo.');
+  }
   const code = params.get('sala');
   if (code) {
     const room = await api.findRoom(code).catch(() => null);
@@ -152,6 +161,48 @@ async function boot() {
     localStorage.removeItem('dvt-room');
   }
   renderHome();
+}
+
+// ---------- acesso: partidas, convites e administrador ----------
+// S.access = null quando o controle de acesso ainda não foi instalado no Supabase (aí não há limites)
+async function loadAccess() {
+  try { S.access = await api.myAccess(); } catch (e) { S.access = null; }
+}
+const adminOff = () => { try { return localStorage.getItem('dvt-admin-off') === '1'; } catch { return false; } };
+const isAdmin = () => !adminOff() && (S.access ? !!S.access.is_admin : (() => { try { return localStorage.getItem('dvt-admin') === '1'; } catch { return false; } })());
+function accessBar() {
+  const a = S.access; if (!a) return '';
+  if (a.is_admin) return `<p class="acc admin">👑 Administrador · sem limites</p>`;
+  if (!a.has) return '';
+  return `<p class="acc">🎟️ <b>${a.games_left}</b> partida${a.games_left === 1 ? '' : 's'} para criar · 📨 <b>${a.invites_left}</b> convite${a.invites_left === 1 ? '' : 's'}</p>`;
+}
+async function requestMore(kind) {
+  let phone = ''; try { phone = await api.adminPhone(); } catch {}
+  const name = localStorage.getItem('dvt-name') || 'um jogador';
+  const msg = kind === 'access'
+    ? `Olá! Sou ${name} e quero jogar o Detetive Virtual Tab. Pode me mandar um convite ou um código de liberação?`
+    : `Olá! Sou ${name} no Detetive Virtual Tab (código do jogador: ${S.access?.code || '?'}). Usei as minhas partidas. Pode me mandar um código de liberação?`;
+  location.href = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+}
+function noAccessCard() {
+  const a = S.access;
+  const none = a && !a.has, empty = a && a.has && !a.is_admin && a.games_left <= 0;
+  if (!none && !empty) return '';
+  return `<div class="card gate">
+    ${none ? `<p><b>🔒 Você ainda não tem acesso para criar salas.</b></p><p class="small muted">Você pode entrar na sala de um amigo pelo código, mais abaixo. Para criar as suas partidas, use um convite ou um código de liberação.</p>`
+      : `<p><b>🎟️ Você já usou as suas partidas.</b></p><p class="small muted">Para jogar mais, peça um código de liberação ao administrador. Entrar na sala de um amigo continua liberado.</p>`}
+    <div class="row"><input id="rel-code" maxlength="12" placeholder="Código" style="text-transform:uppercase"><button class="btn" id="rel-go">Usar código</button></div>
+    <button class="btn wa" id="rel-ask" style="width:100%;margin-top:8px">💬 ${none ? 'Pedir acesso' : 'Pedir mais partidas'} pelo WhatsApp</button>
+  </div>`;
+}
+function bindNoAccess() {
+  if (!$('#rel-go')) return;
+  $('#rel-go').onclick = async () => {
+    const c = $('#rel-code').value.trim(); if (!c) return;
+    try { S.access = await api.redeemCode(c, localStorage.getItem('dvt-name') || ''); toast(`✅ Código aceito! Você tem ${S.access.games_left} partidas.`, 3500); renderHome(); }
+    catch (e) { toast(/usado/i.test(e.message) ? 'Este código já foi usado.' : 'Código inválido.'); }
+  };
+  $('#rel-ask').onclick = () => requestMore(S.access?.has ? 'more' : 'access');
 }
 
 function colorPicker(taken = [], selected) {
@@ -171,8 +222,10 @@ function renderHome(errMsg) {
       <label class="field"><span>Seu nome</span><input id="name" maxlength="20" value="${esc(name)}" placeholder="Ex.: Watson"></label>
       <div class="field"><span>Cor do seu peão</span>${colorPicker([], localStorage.getItem('dvt-color'))}</div>
       <div class="field"><span>Caso a investigar</span><div id="case-pick"></div></div>
-      <button class="btn primary big" id="create">Criar sala</button>
+      ${accessBar()}
+      <button class="btn primary big" id="create" ${S.access && !S.access.is_admin && (!S.access.has || S.access.games_left <= 0) ? 'disabled' : ''}>Criar sala</button>
     </div>
+    ${noAccessCard()}
     <div class="card small">
       <p>Recebeu um código de sala?</p>
       <div class="row"><input id="code" maxlength="5" placeholder="Código" style="text-transform:uppercase"><button class="btn" id="go">Entrar</button></div>
@@ -180,15 +233,16 @@ function renderHome(errMsg) {
     <button class="link" id="rules">Como jogar</button>
     <button class="btn share-app" id="share-app">📲 Compartilhar o jogo</button>
     <button class="link" id="rank">🏆 Ranking</button>
-    ${isAdmin() ? '<button class="link small muted" id="imp">⚙️ Atualizar casos</button>' : ''}
+    ${isAdmin() ? '<button class="link small muted" id="imp">👑 Administração</button>' : ''}
   </div>`;
   // acesso escondido do administrador: 5 toques seguidos na lupa do logo
   let taps = 0, tapT = 0;
-  $('.logo-badge').onclick = () => { const now = Date.now(); taps = now - tapT < 800 ? taps + 1 : 1; tapT = now; if (taps >= 5) { taps = 0; if (!isAdmin()) showAdminLogin(); } };
+  $('.logo-badge').onclick = () => { const now = Date.now(); taps = now - tapT < 800 ? taps + 1 : 1; tapT = now; if (taps >= 5) { taps = 0; if (isAdmin()) showAdmin(); else showAdminLogin(); } };
   $('#rank').onclick = showRanking;
   $('#share-app').onclick = shareApp;
   $('#rules').onclick = showRules;
-  $('#imp') && ($('#imp').onclick = showImport);
+  $('#imp') && ($('#imp').onclick = showAdmin);
+  bindNoAccess();
   casePicker($('#case-pick'), 0, true);
   $('#go').onclick = () => { const c = $('#code').value.trim(); if (c) location.search = '?sala=' + c.toUpperCase(); };
   $('#create').onclick = async () => {
@@ -197,7 +251,11 @@ function renderHome(errMsg) {
     let cid = +$('#case').value; if (!cid) cid = S.cases[Math.floor(Math.random() * S.cases.length)].id;
     localStorage.setItem('dvt-name', n); localStorage.setItem('dvt-color', color);
     $('#create').disabled = true;
-    try { openRoom(await api.createRoom(n, color, cid)); } catch (e) { toast(e.message); $('#create').disabled = false; }
+    try { const r = await api.createRoom(n, color, cid); if (S.access && !S.access.is_admin) S.access.games_left--; openRoom(r); }
+    catch (e) {
+      if (/SEM_ACESSO|SEM_PARTIDAS/.test(e.message)) { await loadAccess(); renderHome(); toast(/SEM_ACESSO/.test(e.message) ? 'Você ainda não tem acesso para criar salas.' : 'Você já usou as suas partidas.'); return; }
+      toast(e.message); $('#create').disabled = false;
+    }
   };
 }
 
@@ -211,23 +269,67 @@ async function decryptCases(pw) {
   const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(f.iv) }, key, b64(f.data));
   return JSON.parse(new TextDecoder().decode(plain));
 }
-const isAdmin = () => { try { return localStorage.getItem('dvt-admin') === '1'; } catch { return false; } };
 const normPw = (v) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(.{4})(?=.)/g, '$1-');
 function showAdminLogin() {
   const wrap = modal({ title: '🔐 Acesso do administrador', html: `<label class="field"><span>Senha dos casos</span><input id="adm-pw" autocomplete="off" autocapitalize="characters" spellcheck="false"></label><p class="small" id="adm-msg"></p>`,
     buttons: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Entrar', cls: 'primary', close: false, onClick: async () => {
       const pw = normPw($('#adm-pw', wrap).value); if (!pw) return;
       $('#adm-msg', wrap).textContent = 'Conferindo...';
-      try { await decryptCases(pw); } catch { $('#adm-msg', wrap).textContent = '❌ Senha incorreta.'; return; }
-      try { localStorage.setItem('dvt-admin', '1'); } catch {}
+      try { await api.claimAdmin(pw); }
+      catch (e) {
+        if (/Senha incorreta/.test(e.message)) { $('#adm-msg', wrap).textContent = '❌ Senha incorreta.'; return; }
+        // controle de acesso ainda não instalado: confere a senha pelo arquivo dos casos
+        try { await decryptCases(pw); } catch { $('#adm-msg', wrap).textContent = '❌ Senha incorreta.'; return; }
+      }
+      try { localStorage.setItem('dvt-admin', '1'); localStorage.removeItem('dvt-admin-off'); } catch {}
+      await loadAccess();
       closeModal(); toast('Modo administrador ativado neste aparelho.'); renderHome();
     } }] });
 }
+function showAdmin() {
+  const wrap = modal({ title: '👑 Administração', html: `<div class="loclist">
+      <button class="btn" id="ad-imp">⚙️ Atualizar casos</button>
+      <button class="btn" id="ad-rel">🎟️ Gerar código de liberação</button>
+      <button class="btn" id="ad-inv">📨 Gerar convite para o jogo</button>
+      <button class="btn" id="ad-pl">👥 Jogadores</button>
+      <button class="btn" id="ad-ph">📱 Meu WhatsApp (para os pedidos)</button>
+    </div>
+    <p class="small muted">Os jogadores comuns têm 5 partidas e 5 convites. Você não tem limites.</p>
+    <button class="link small" id="ad-out">Sair do modo administrador neste aparelho</button>`, buttons: [{ label: 'Fechar', cls: 'primary' }] });
+  $('#ad-imp', wrap).onclick = showImport;
+  $('#ad-inv', wrap).onclick = shareApp;
+  $('#ad-rel', wrap).onclick = async () => {
+    const n = +(prompt('Quantas partidas este código libera?', '5') || 0); if (!n) return;
+    try {
+      const code = await api.createRelease(n);
+      const msg = `Seu código de liberação do Detetive Virtual Tab: ${code} (vale ${n} partidas). Na tela inicial, digite em "Usar código". ${location.origin + location.pathname}`;
+      modal({ title: '🎟️ Código de liberação', html: `<div class="code">${esc(code)}</div><p class="small muted">Vale ${n} partida${n > 1 ? 's' : ''} e pode ser usado por uma pessoa só.</p>
+        <div class="share"><a class="btn wa" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a><button class="btn" id="rc-copy">Copiar</button></div>`,
+        buttons: [{ label: 'Fechar', cls: 'primary' }] });
+      $('#rc-copy').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Copiado!'); } catch { prompt('Copie:', msg); } };
+    } catch (e) { toast(adminErr(e)); }
+  };
+  $('#ad-ph', wrap).onclick = async () => {
+    let cur = ''; try { cur = await api.adminPhone(); } catch {}
+    const v = prompt('Seu WhatsApp com DDI e DDD (ex.: 5511999990000). Os pedidos de partidas chegam nele:', cur); if (v === null) return;
+    try { await api.setAdminPhone(v); toast('WhatsApp salvo!'); } catch (e) { toast(adminErr(e)); }
+  };
+  $('#ad-pl', wrap).onclick = async () => {
+    try {
+      const list = await api.adminPlayers();
+      modal({ cls: 'wide', title: '👥 Jogadores', html: list.length ? `<table class="rank"><thead><tr><th>Nome</th><th>Código</th><th title="Partidas">🎟️</th><th title="Convites">📨</th><th>Convidado por</th></tr></thead><tbody>
+        ${list.map((p) => `<tr><td>${p.is_admin ? '👑 ' : ''}${esc(p.name || '—')}</td><td><code>${esc(p.code)}</code></td><td>${p.is_admin ? '∞' : p.games_left}</td><td>${p.is_admin ? '∞' : p.invites_left}</td><td>${esc(p.by || '—')}</td></tr>`).join('')}</tbody></table>`
+        : '<p>Nenhum jogador ainda.</p>', buttons: [{ label: 'Fechar', cls: 'primary' }] });
+    } catch (e) { toast(adminErr(e)); }
+  };
+  $('#ad-out', wrap).onclick = () => { try { localStorage.setItem('dvt-admin-off', '1'); localStorage.removeItem('dvt-admin'); } catch {} closeModal(); renderHome(); };
+}
+const adminErr = (e) => /function|schema cache/i.test(e.message) ? 'Falta rodar no Supabase o SQL do controle de acesso.' : e.message;
 function showImport() {
   const wrap = modal({ title: '⚙️ Atualizar casos', html: `<p class="muted small">Carrega no servidor os casos mais novos do jogo. Só quem tem a senha dos casos consegue fazer isso.</p>
     <label class="field"><span>Senha dos casos</span><input id="imp-pw" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
     <p class="small" id="imp-msg"></p>
-    <button class="link small" id="adm-out">Sair do modo administrador neste aparelho</button>`, buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Atualizar', cls: 'primary', close: false, onClick: async () => {
+`, buttons: [{ label: 'Fechar', cls: 'ghost' }, { label: 'Atualizar', cls: 'primary', close: false, onClick: async () => {
       const pw = normPw($('#imp-pw', wrap).value);
       const msg = $('#imp-msg', wrap); if (!pw) return;
       msg.textContent = 'Abrindo os casos...';
@@ -236,14 +338,26 @@ function showImport() {
       try { const n = await api.importCases(pw, cases); S.cases = await api.listCases(); msg.textContent = `✅ ${n} casos atualizados!`; setTimeout(() => { closeModal(); renderHome(); }, 1500); }
       catch (e) { msg.textContent = /import_cases|function/i.test(e.message) ? '❌ Falta rodar no Supabase o SQL de atualização (passo 1).' : '❌ ' + e.message; }
     } }] });
-  $('#adm-out', wrap).onclick = () => { try { localStorage.removeItem('dvt-admin'); } catch {} closeModal(); renderHome(); };
+
 }
 
 // compartilhar o jogo em si (não uma sala): quem recebe pode criar as próprias partidas
-function shareApp() {
-  const url = location.origin + location.pathname;
+async function shareApp() {
+  const a = S.access;
+  if (a && !a.has) return toast('Você ainda não tem acesso ao jogo para convidar alguém.');
+  if (a && !a.is_admin && a.invites_left <= 0) return modal({ title: '📨 Convites', html: '<p>Você já usou os seus 5 convites.</p>', buttons: [{ label: 'Fechar', cls: 'primary' }] });
+  if (a && !a.is_admin && !(await ask('Convidar alguém', `Cada convite vale para <b>uma pessoa</b>. Você tem <b>${a.invites_left}</b> convite${a.invites_left > 1 ? 's' : ''}. Gerar um convite agora?`, 'Gerar convite'))) return;
+  let url = location.origin + location.pathname;
+  if (a) {
+    try { const t = await api.createInvite(); url += '?convite=' + t; if (!a.is_admin) a.invites_left--; }
+    catch (e) { return toast(e.message); }
+  }
+  shareAppModal(url, a);
+}
+function shareAppModal(url, a) {
   const msg = `Conheça o Detetive Virtual Tab 🔍: um jogo de investigação para jogar com os amigos, cada um no seu celular. Abra no navegador ou instale na tela inicial: ${url}`;
-  modal({ title: '📲 Compartilhar o jogo', html: `<p>Envie o jogo para quem você quiser. A pessoa poderá criar as próprias salas e convidar outros amigos.</p>
+  modal({ title: '📲 Compartilhar o jogo', html: `<p>${a ? 'Este convite vale para <b>uma pessoa</b>. Ela ganha 5 partidas e 5 convites.' : 'Envie o jogo para quem você quiser.'}</p>
+    ${a && !a.is_admin ? `<p class="small muted">Convites restantes: ${a.invites_left}.</p>` : ''}
     <p class="muted small">Para chamar alguém para <b>uma partida</b>, use o link da sala, que aparece na tela da sala.</p>
     <div class="share">
       <a class="btn wa" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
@@ -1135,7 +1249,8 @@ function showRules() {
     <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
     <p><b>Som 🔊:</b> música ambiente e um som característico ao entrar em cada local. São 4 trilhas de música, que trocam sozinhas a cada caso. Dá para ligar e desligar no 🔊 do topo.</p>
     <p><b>Reações 😀:</b> durante a partida, toque no 😀 do topo e mande um emoji que aparece para todos por alguns segundos.</p>
-    <p><b>Convites:</b> o link da sala chama alguém para aquela partida, e qualquer jogador que já está na sala pode repassá-lo. Só o anfitrião (quem criou a sala) escolhe o caso e começa a partida. Para mandar o jogo a alguém, para que a pessoa crie as próprias salas, use "📲 Compartilhar o jogo", na tela inicial ou no menu ☰.</p>
+    <p><b>Acesso:</b> cada jogador recebe 5 partidas para criar e 5 convites para chamar outras pessoas para o jogo. Só criar uma sala gasta partida: entrar na sala de um amigo pelo link ou código é sempre livre. Quando acabarem as partidas, toque em "Pedir mais partidas" e o administrador manda um código de liberação.</p>
+    <p><b>Convites:</b> o link da sala chama alguém para aquela partida, e qualquer jogador que já está na sala pode repassá-lo. Só o anfitrião (quem criou a sala) escolhe o caso e começa a partida. Para mandar o jogo a alguém, para que a pessoa crie as próprias salas, use "📲 Compartilhar o jogo", na tela inicial ou no menu ☰. Cada link de convite vale para uma pessoa.</p>
     <p><b>Avaliação ⭐:</b> no fim de cada partida, cada detetive dá uma nota ao caso e diz se foi fácil, na medida ou difícil demais. O tempo da partida fica registrado. Tudo aparece no Ranking, na aba 📊 Casos.</p>
     <p><b>Ranking 🏆:</b> conta vitórias, partidas, acusações erradas e tempo médio para resolver. Só valem partidas com 2 ou mais detetives: partidas sozinho (modo treino) não contam. Use sempre o mesmo nome para somar os pontos.</p>
     <p><b>Casos jogados ✔:</b> na escolha do caso, os que você já jogou neste aparelho aparecem com ✔.</p>

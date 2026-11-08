@@ -66,6 +66,21 @@ export default {
     const { data, error } = await sb.from('rooms').select('id,case_id,state,created_at').eq('status', 'finished').order('created_at', { ascending: false }).limit(1000);
     if (error) err(error); return data;
   },
+  async rpc(fn, args = {}) {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error) err(error); return data;
+  },
+  myAccess() { return this.rpc('my_access'); },
+  claimAdmin(secret) { return this.rpc('claim_admin', { p_secret: secret }); },
+  createInvite() { return this.rpc('create_invite'); },
+  redeemCode(token, name) { return this.rpc('redeem_code', { p_token: token, p_name: name }); },
+  createRelease(games) { return this.rpc('create_release', { p_games: games }); },
+  setAdminPhone(phone) { return this.rpc('set_admin_phone', { p_phone: phone }); },
+  adminPlayers() { return this.rpc('admin_players'); },
+  async adminPhone() {
+    const { data, error } = await sb.from('app_config').select('value').eq('key', 'admin_phone').maybeSingle();
+    if (error) err(error); return data?.value || '';
+  },
   async importCases(secret, cases) {
     const { data, error } = await sb.rpc('import_cases', { p_secret: secret, p_cases: cases });
     if (error) err(error); return data;
