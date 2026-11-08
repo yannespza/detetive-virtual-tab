@@ -517,7 +517,6 @@ function notifyTurn() {
   pop.querySelector('[data-a=go]').onclick = () => { if (S.nb && $('#modal .notebook')) flushNotebook(); closeModal(); pop.remove(); };
   pop.querySelector('[data-a=stay]').onclick = () => pop.remove();
   document.body.appendChild(pop);
-  if (!$('#modal')) setTimeout(() => pop.remove(), 2500);
 }
 
 function showClue(loc, txt) {
@@ -780,7 +779,12 @@ let saveTimer = null;
 async function showNotebook() {
   if (!S.nb) S.nb = await api.getNotebook(S.room.id).catch(() => ({ clues: {}, answers: {}, notes: '' }));
   const c = caseOf(S.room.case_id), nb = S.nb;
+  const riddles = groupRiddles(nb.clues);
   const wrap = modal({ cls: 'wide notebook', title: '📒 Caderneta do Detetive', html: `
+    ${riddles.length ? `<h4>🧩 Charadas</h4><div class="riddles">${riddles.map((g) => `<div class="riddle">
+      <div class="rh">${esc(g.label)} <small>${g.found}/${g.total} partes</small></div>
+      ${g.parts.map((p) => `<div class="rp ${p.text ? '' : 'missing'}"><b>${p.roman})</b> ${p.text ? `${esc(p.text)} <i>${LOCS[p.loc].icon}</i>` : 'ainda não encontrada'}</div>`).join('')}
+    </div>`).join('')}</div>` : ''}
     <h4>Pistas</h4>
     <div class="clues">${CLUE_LOCS.map((l) => `<div class="crow ${nb.clues[l] ? '' : 'empty'}"><div class="cl">${LOCS[l].icon} ${esc(LOCS[l].name)}</div>
       <div class="ct">${nb.clues[l] ? esc(nb.clues[l]).replace(/\n/g, '<br>') : '—'}</div></div>`).join('')}</div>
@@ -799,6 +803,23 @@ async function showNotebook() {
   };
   wrap.querySelectorAll('input,textarea').forEach((i) => i.addEventListener('input', onInput));
 }
+// junta as partes das charadas ("Pista do X (N partes): I) ...") encontradas em locais diferentes
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+function groupRiddles(clues = {}) {
+  const groups = {};
+  for (const [loc, txt] of Object.entries(clues)) {
+    const m = /^(.+?)\s*\((\d+)\s*partes?\)\s*:?\s*\n\s*([IVX]+)\)\s*([\s\S]*)$/.exec(txt || '');
+    if (!m) continue;
+    const label = m[1].trim(), total = +m[2];
+    const g = groups[label] || (groups[label] = { label, total, parts: {} });
+    g.parts[m[3]] = { text: m[4].trim(), loc };
+  }
+  return Object.values(groups).map((g) => {
+    const parts = ROMAN.slice(0, g.total).map((r) => ({ roman: r, ...(g.parts[r] || {}) }));
+    return { label: g.label, total: g.total, found: parts.filter((p) => p.text).length, parts };
+  });
+}
+
 async function flushNotebook() {
   clearTimeout(saveTimer);
   try { await api.saveNotebook(S.room.id, S.nb.answers || {}, S.nb.notes || ''); const el = $('#saved'); if (el) el.textContent = 'Salvo ✓ · só você vê.'; }
@@ -820,7 +841,10 @@ function showMenu() {
 }
 function showSound() {
   const wrap = modal({ title: '🔊 Som', html: `<label class="switch"><input type="checkbox" id="sw-m" ${Sound.music ? 'checked' : ''}><span>Música ambiente</span></label>
-    <label class="switch"><input type="checkbox" id="sw-f" ${Sound.fx ? 'checked' : ''}><span>Sons dos locais e dos dados</span></label>`, buttons: [{ label: 'Pronto', cls: 'primary' }] });
+    <label class="switch"><input type="checkbox" id="sw-f" ${Sound.fx ? 'checked' : ''}><span>Sons dos locais e dos dados</span></label>
+    <button class="btn" id="sw-t" style="width:100%;margin-top:12px">🔔 Testar som</button>
+    <p class="muted small">No iPhone, confira se o volume está alto. Se ainda assim não tocar, toque em "Testar som".</p>`, buttons: [{ label: 'Pronto', cls: 'primary' }] });
+  $('#sw-t', wrap).onclick = () => Sound.test(['hotel', 'docas', 'teatro', 'parque', 'estacao', 'scotland'][Math.floor(Math.random() * 6)]);
   const upd = () => { Sound.set($('#sw-m', wrap).checked, $('#sw-f', wrap).checked); $('#b-snd').textContent = Sound.icon(); };
   $('#sw-m', wrap).onchange = upd; $('#sw-f', wrap).onchange = upd;
 }

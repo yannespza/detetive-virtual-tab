@@ -201,3 +201,10 @@ details summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .switch { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px dashed #d1bb8a; font-family: var(--sans); font-size: 15px; }
 .switch input { width: 22px; height: 22px; accent-color: #a8841c; }
 .sol-h { font-family: var(--serif); margin: 14px 0 6px; }
+.riddles { display: grid; gap: 8px; }
+.riddle { background: #fffaf0; border: 1px solid #c9b07a; border-left: 4px solid #a8841c; border-radius: 10px; padding: 10px 12px; }
+.riddle .rh { font-family: var(--serif); font-weight: 600; margin-bottom: 4px; }
+.riddle .rh small { font-family: var(--sans); font-weight: 400; font-size: 11px; color: #8a7652; margin-left: 4px; }
+.rp { font-size: 14px; padding: 3px 0; }
+.rp i { font-style: normal; font-size: 12px; }
+.rp.missing { color: #b5a07a; font-style: italic; }
