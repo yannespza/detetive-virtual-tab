@@ -1,5 +1,5 @@
 // Música ambiente e efeitos sonoros criados direto no navegador (sem arquivos de áudio).
-let ctx = null, master, musicBus, fxBus, reverb, noiseBuf, musicOn = false, musicTimer = null, melodyTimer = null, rainNode = null, silentEl = null;
+let ctx = null, master, musicBus, fxBus, reverb, noiseBuf, musicOn = false, musicTimer = null, melodyTimer = null, silentEl = null;
 const pref = (() => { try { return JSON.parse(localStorage.getItem('dvt-sound') || '{}'); } catch { return {}; } })();
 const state = { music: pref.music !== false, fx: pref.fx !== false };
 const MUSIC_VOL = 0.5, FX_VOL = 0.75;
@@ -127,48 +127,111 @@ const FX = {
   turn(t) { metal(1318.5, t, 0.9, 0.18); metal(1760, t + 0.18, 1.3, 0.18); },
 };
 
-// ---------- música ambiente: piano elétrico suave + chuva leve ----------
-// progressão Dm9 → B♭maj7 → Gm9 → A7sus4 (misteriosa, mas tranquila)
-const CHORDS = [
-  [146.83, 220.0, 261.63, 329.63, 349.23],
-  [116.54, 233.08, 293.66, 349.23, 440.0],
-  [98.0, 233.08, 293.66, 349.23, 440.0],
-  [110.0, 220.0, 293.66, 329.63, 392.0],
+// ---------- música ambiente: 4 trilhas, uma para cada caso (troca automática) ----------
+const hz = (n) => 440 * Math.pow(2, (n - 69) / 12);   // nota MIDI → frequência
+const ch = (...n) => n.map(hz);
+const THEMES = [
+  { name: 'Neblina em Baker Street',   // piano elétrico suave + chuva leve
+    chords: [ch(50, 57, 60, 64, 65), ch(46, 58, 62, 65, 69), ch(43, 58, 62, 65, 69), ch(45, 57, 62, 64, 67)],
+    scale: ch(74, 76, 77, 79, 81, 84, 86), every: 7000, style: 'piano', amb: 'rain' },
+  { name: 'Lareira acesa',            // acordes quentes, caixinha de música e estalos de lenha
+    chords: [ch(41, 57, 60, 64, 69), ch(40, 55, 59, 62, 67), ch(38, 57, 60, 65, 69), ch(43, 55, 59, 64, 67)],
+    scale: ch(76, 79, 81, 83, 84, 86, 88), every: 8000, style: 'musicbox', amb: 'fire' },
+  { name: 'Rio Tâmisa à noite',       // violoncelo grave, pizzicato e água batendo no cais
+    chords: [ch(45, 52, 60, 64, 71), ch(41, 53, 57, 64, 71), ch(40, 52, 55, 62, 66), ch(38, 50, 57, 62, 64)],
+    scale: ch(69, 71, 72, 74, 76, 79, 81), every: 7500, style: 'pizz', amb: 'water' },
+  { name: 'Relógio do escritório',     // harpa em arpejos e o tique-taque de um relógio antigo
+    chords: [ch(48, 55, 62, 63, 67), ch(44, 56, 60, 63, 67), ch(39, 55, 58, 62, 67), ch(43, 55, 60, 62, 65)],
+    scale: null, every: 6500, style: 'harp', amb: 'clock' },
 ];
-const MELODY = [587.33, 659.25, 698.46, 783.99, 880.0, 1046.5, 1174.66];
-let chordIdx = 0;
+let theme = 0, chordIdx = 0, ambNode = null, ambTimer = null;
 function padChord() {
   if (!musicOn) return;
-  const t = T() + 0.05, ch = CHORDS[chordIdx % CHORDS.length]; chordIdx++;
-  ch.forEach((f, i) => {
-    tone(f, t + i * 0.06, 6.5, { type: i === 0 ? 'sine' : 'triangle', gain: i === 0 ? 0.11 : 0.035, attack: 1.4, bus: musicBus, rev: 0.5, lp: 1500 });
+  const th = THEMES[theme], t = T() + 0.05, c = th.chords[chordIdx % th.chords.length]; chordIdx++;
+  c.forEach((f, i) => {
+    if (th.style === 'pizz' && i === 0) { // baixo de violoncelo
+      tone(f, t, th.every / 1000 - 0.5, { type: 'sawtooth', gain: 0.05, attack: 1.2, bus: musicBus, rev: 0.45, lp: 520, vib: [5, 1.2] });
+      return;
+    }
+    tone(f, t + i * 0.06, th.every / 1000 - 0.5, { type: i === 0 ? 'sine' : 'triangle', gain: i === 0 ? 0.1 : 0.03, attack: 1.4, bus: musicBus, rev: 0.5, lp: th.style === 'musicbox' ? 1200 : 1500 });
   });
-  musicTimer = setTimeout(padChord, 7000);
+  musicTimer = setTimeout(padChord, th.every);
 }
 function melodyNote() {
   if (!musicOn) return;
+  const th = THEMES[theme], t = T() + 0.05, pick = (a) => a[Math.floor(Math.random() * a.length)];
+  if (th.style === 'harp') { // arpejo subindo nas notas do acorde atual
+    if (Math.random() < 0.6) {
+      const c = th.chords[(chordIdx - 1 + th.chords.length) % th.chords.length].slice(1);
+      c.forEach((f, i) => { tone(f * 2, t + i * 0.16, 1.6, { type: 'triangle', gain: 0.032, attack: 0.005, bus: musicBus, rev: 0.6, lp: 3000 }); });
+    }
+    melodyTimer = setTimeout(melodyNote, 2600 + Math.random() * 2400); return;
+  }
   if (Math.random() < 0.55) {
-    const t = T() + 0.05, f = MELODY[Math.floor(Math.random() * MELODY.length)];
-    tone(f, t, 1.8, { gain: 0.04, attack: 0.01, bus: musicBus, rev: 0.7 });
-    tone(f * 4, t, 0.35, { gain: 0.006, attack: 0.01, bus: musicBus, rev: 0.5 });
-    if (Math.random() < 0.4) tone(MELODY[Math.floor(Math.random() * MELODY.length)], t + 0.45, 1.6, { gain: 0.03, attack: 0.01, bus: musicBus, rev: 0.7 });
+    const f = pick(th.scale);
+    if (th.style === 'musicbox') {
+      [[1, 0.035], [4, 0.006], [5.4, 0.003]].forEach(([m, g]) => tone(f * m, t, 1.4 / m ** 0.4, { gain: g, attack: 0.003, bus: musicBus, rev: 0.6 }));
+    } else if (th.style === 'pizz') {
+      tone(f / 2, t, 0.5, { type: 'triangle', gain: 0.05, attack: 0.004, bus: musicBus, rev: 0.55, lp: 1800 });
+    } else {
+      tone(f, t, 1.8, { gain: 0.04, attack: 0.01, bus: musicBus, rev: 0.7 });
+      tone(f * 4, t, 0.35, { gain: 0.006, attack: 0.01, bus: musicBus, rev: 0.5 });
+    }
+    if (Math.random() < 0.4) {
+      const f2 = pick(th.scale), d = th.style === 'pizz' ? 0.3 : 0.45;
+      tone(th.style === 'pizz' ? f2 / 2 : f2, t + d, th.style === 'pizz' ? 0.5 : 1.6, { type: th.style === 'pizz' ? 'triangle' : 'sine', gain: 0.03, attack: 0.005, bus: musicBus, rev: 0.7 });
+    }
   }
   melodyTimer = setTimeout(melodyNote, 1750 + Math.random() * 1750);
 }
+// som de fundo de cada trilha
+function startAmbience() {
+  const amb = THEMES[theme].amb;
+  if (amb === 'rain' || amb === 'water') {
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter();
+    if (amb === 'rain') { f.type = 'bandpass'; f.frequency.value = 5000; f.Q.value = 0.4; }
+    else { f.type = 'lowpass'; f.frequency.value = 500; }
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T()); g.gain.exponentialRampToValueAtTime(amb === 'rain' ? 0.018 : 0.03, T() + 3);
+    let last = g;
+    if (amb === 'water') { // ondas lentas
+      const a = ctx.createGain(), l = ctx.createOscillator(), lg = ctx.createGain(); a.gain.value = 0.55; l.frequency.value = 0.18; lg.gain.value = 0.45;
+      l.connect(lg); lg.connect(a.gain); l.start(); g.connect(a); last = a; ambNode = { src, g, l };
+    } else ambNode = { src, g };
+    src.connect(f); f.connect(g); last.connect(musicBus); src.start();
+  } else if (amb === 'fire') {
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 350;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T()); g.gain.exponentialRampToValueAtTime(0.02, T() + 3);
+    src.connect(f); f.connect(g); g.connect(musicBus); src.start(); ambNode = { src, g };
+    const crackle = () => { if (!musicOn) return;
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) noise(T() + Math.random() * 0.3, 0.015, { type: 'highpass', freq: 2500 + Math.random() * 3000, gain: 0.03 + Math.random() * 0.04, bus: musicBus, rev: 0.1 });
+      ambTimer = setTimeout(crackle, 300 + Math.random() * 1400); };
+    crackle();
+  } else if (amb === 'clock') {
+    let k = 0;
+    const tick = () => { if (!musicOn) return;
+      const t = T() + 0.02, f = k++ % 2 ? 1900 : 1650;
+      tone(f, t, 0.03, { gain: 0.012, bus: musicBus, rev: 0.15 }); noise(t, 0.012, { type: 'highpass', freq: 4000, gain: 0.01, bus: musicBus, rev: 0.1 });
+      ambTimer = setTimeout(tick, 1000); };
+    tick();
+  }
+}
+function stopAmbience() {
+  clearTimeout(ambTimer);
+  if (ambNode) { const { src, g, l } = ambNode; g.gain.setTargetAtTime(0.0001, T(), 0.3); setTimeout(() => { try { src.stop(); l?.stop(); } catch {} }, 1500); ambNode = null; }
+}
 function startMusic() {
   if (!ctx || musicOn) return;
-  musicOn = true;
-  const rain = ctx.createBufferSource(); rain.buffer = noiseBuf; rain.loop = true;
-  const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 5000; rf.Q.value = 0.4;
-  const rg = ctx.createGain(); rg.gain.setValueAtTime(0.0001, T()); rg.gain.exponentialRampToValueAtTime(0.018, T() + 3);
-  rain.connect(rf); rf.connect(rg); rg.connect(musicBus); rain.start();
-  rainNode = { rain, rg };
+  musicOn = true; chordIdx = 0;
+  startAmbience();
   padChord(); melodyTimer = setTimeout(melodyNote, 2500);
 }
 function stopMusic() {
   if (!musicOn) return;
   musicOn = false; clearTimeout(musicTimer); clearTimeout(melodyTimer);
-  if (rainNode) { const { rain, rg } = rainNode; rg.gain.setTargetAtTime(0.0001, T(), 0.3); setTimeout(() => rain.stop(), 1500); rainNode = null; }
+  stopAmbience();
 }
 
 export default {
@@ -191,4 +254,12 @@ export default {
     } catch {}
   },
   test(name) { unlock(); this.sfx(name); },
+  // escolhe a trilha pelo número do caso: casos 1, 5, 9... = trilha 1; 2, 6, 10... = trilha 2 etc.
+  forCase(caseId) {
+    const nt = ((Math.max(1, +caseId || 1) - 1) % THEMES.length);
+    if (nt === theme) return;
+    theme = nt;
+    if (musicOn) { stopMusic(); setTimeout(() => { if (state.music && ctx) startMusic(); }, 1200); }
+  },
+  get track() { return THEMES[theme].name; },
 };

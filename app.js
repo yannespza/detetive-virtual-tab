@@ -351,7 +351,7 @@ function renderGame() {
 
 function buildGame() {
   const c = caseOf(S.room.case_id);
-  markPlayed(c);
+  markPlayed(c); Sound.forCase(c?.id);
   app.innerHTML = `<div id="game">
     <header class="topbar">
       <button class="tb-case" id="b-case"><small>Caso ${c?.id}</small><span>${esc(c?.title)}</span></button>
@@ -943,6 +943,7 @@ function showMenu() {
 }
 function showSound() {
   const wrap = modal({ title: '🔊 Som', html: `<label class="switch"><input type="checkbox" id="sw-m" ${Sound.music ? 'checked' : ''}><span>Música ambiente</span></label>
+    <p class="muted small">🎵 Trilha deste caso: <b>${esc(Sound.track)}</b>. São 4 trilhas, que mudam sozinhas a cada caso.</p>
     <label class="switch"><input type="checkbox" id="sw-f" ${Sound.fx ? 'checked' : ''}><span>Sons dos locais e dos dados</span></label>
     <button class="btn" id="sw-t" style="width:100%;margin-top:12px">🔔 Testar som</button>
     <p class="muted small">No iPhone, confira se o volume está alto. Se ainda assim não tocar, toque em "Testar som".</p>`, buttons: [{ label: 'Pronto', cls: 'primary' }] });
@@ -1023,6 +1024,7 @@ function showRules() {
     <p><b>Solução:</b> quando achar que sabe tudo, volte à Casa de Sherlock Holmes e toque em "Apresentar solução". Antes de conferir, dá para revisar e corrigir as respostas. Só você vê a solução oficial.</p>
     <p><b>Conferência:</b> as respostas não precisam ser iguais às do jogo. Basta a palavra certa: um nome (só o primeiro nome já vale), um lugar ou um objeto. Erros de digitação leves são aceitos. Verde = certa, amarelo = incompleta, vermelho = errada. Responder mais de um suspeito na mesma pergunta conta como errado. Só com tudo verde aparece o botão de acerto; se errar, você sai do jogo e guarda segredo.</p>
     <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
+    <p><b>Som 🔊:</b> música ambiente e um som característico ao entrar em cada local. São 4 trilhas de música, que trocam sozinhas a cada caso. Dá para ligar e desligar no 🔊 do topo.</p>
     <p><b>Reações 😀:</b> durante a partida, toque no 😀 do topo e mande um emoji que aparece para todos por alguns segundos.</p>
     <p><b>Ranking 🏆:</b> conta vitórias, partidas, acusações erradas e tempo médio para resolver. Só valem partidas com 2 ou mais detetives: partidas sozinho (modo treino) não contam. Use sempre o mesmo nome para somar os pontos.</p>
     <p><b>Casos jogados ✔:</b> na escolha do caso, os que você já jogou neste aparelho aparecem com ✔.</p>
