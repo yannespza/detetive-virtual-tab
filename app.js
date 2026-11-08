@@ -31,6 +31,9 @@ const currentId = () => (st().order ? st().order[st().turn.idx] : null);
 const isHost = () => S.room?.host === S.uid;
 const myTurn = () => S.room?.status === 'playing' && currentId() === S.uid;
 const locName = (l) => LOCS[l]?.name || l;
+const stars = (c) => c?.level ? '★'.repeat(c.level) + '☆'.repeat(5 - c.level) : '';
+const caseOpt = (c, sel) => `<option value="${c.id}" ${sel ? 'selected' : ''}>${c.id}. ${esc(c.title.replace(/^O Caso d[aoe]s? /, ''))} ${c.level ? '· ' + '★'.repeat(c.level) : ''}</option>`;
+const caseInfo = (c) => c ? `<div class="case-info"><span class="stars" title="Dificuldade">${stars(c)}</span><p>${esc(c.summary || '')}</p></div>` : '';
 
 function log(s, msg) { s.log = s.log || []; s.log.push({ t: Date.now(), msg }); if (s.log.length > 40) s.log.shift(); }
 
@@ -124,7 +127,7 @@ function colorPicker(taken = [], selected) {
     <input type="radio" name="color" value="${c.id}" ${c.id === sel ? 'checked' : ''} ${taken.includes(c.id) ? 'disabled' : ''}>
     <span style="background:${c.id}"></span></label>`).join('')}</div>`;
 }
-const logo = `<div class="logo"><div class="logo-badge">🔍</div><h1>Detetive<br><span>Virtual Tab</span></h1><p class="tagline">Investigações em Londres · 2 a 6 detetives</p></div>`;
+const logo = `<div class="logo"><div class="logo-badge">🔍</div><h1>Detetive<br><span>Virtual Tab</span></h1><p class="tagline">Investigações em Londres · 1 a 6 detetives</p></div>`;
 
 function renderHome(errMsg) {
   const name = localStorage.getItem('dvt-name') || '';
@@ -135,8 +138,9 @@ function renderHome(errMsg) {
       <div class="field"><span>Cor do seu peão</span>${colorPicker([], localStorage.getItem('dvt-color'))}</div>
       <label class="field"><span>Caso a investigar</span><select id="case">
         <option value="0">🎲 Sortear um caso</option>
-        ${S.cases.map((c) => `<option value="${c.id}">Caso ${c.id} · ${esc(c.title)}</option>`).join('')}
+        ${S.cases.map((c) => caseOpt(c)).join('')}
       </select></label>
+      <div id="case-info"><p class="muted small">O caso será sorteado entre os ${S.cases.length} disponíveis.</p></div>
       <button class="btn primary big" id="create">Criar sala</button>
     </div>
     <div class="card small">
@@ -146,6 +150,7 @@ function renderHome(errMsg) {
     <button class="link" id="rules">Como jogar</button>
   </div>`;
   $('#rules').onclick = showRules;
+  $('#case').onchange = (e) => { const c = caseOf(+e.target.value); $('#case-info').innerHTML = c ? caseInfo(c) : `<p class="muted small">O caso será sorteado entre os ${S.cases.length} disponíveis.</p>`; };
   $('#go').onclick = () => { const c = $('#code').value.trim(); if (c) location.search = '?sala=' + c.toUpperCase(); };
   $('#create').onclick = async () => {
     const n = $('#name').value.trim(); if (!n) return toast('Digite seu nome');
@@ -244,8 +249,9 @@ function renderLobby() {
     </div>
     <div class="card">
       <h3>Caso</h3>
-      ${isHost() ? `<select id="case">${S.cases.map((x) => `<option value="${x.id}" ${x.id === r.case_id ? 'selected' : ''}>Caso ${x.id} · ${esc(x.title)}</option>`).join('')}</select>`
+      ${isHost() ? `<select id="case">${S.cases.map((x) => caseOpt(x, x.id === r.case_id)).join('')}</select>`
         : `<p><b>Caso ${c?.id} · ${esc(c?.title)}</b></p>`}
+      ${caseInfo(c)}
       ${isHost() ? `<button class="btn primary big" id="start">${s.players.length < 2 ? 'Começar sozinho (modo treino)' : 'Começar a partida'}</button>`
         : `<p class="waiting">Aguardando o anfitrião começar a partida...</p>`}
     </div>
@@ -782,7 +788,7 @@ async function showEnd() {
 // ---------- caso, caderneta, menu ----------
 function showCase() {
   const c = caseOf(S.room.case_id);
-  modal({ cls: 'wide', title: `📜 Caso ${c.id}`, html: `<h3 class="case-title">${esc(c.title)}</h3>
+  modal({ cls: 'wide', title: `📜 Caso ${c.id} <span class="stars">${stars(c)}</span>`, html: `<h3 class="case-title">${esc(c.title)}</h3>
     <div class="story">${esc(c.story).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div>
     <p><b>Holmes precisa descobrir:</b></p><ul class="qs">${c.questions.map((q) => `<li><b>${q.key})</b> ${esc(q.ask)}</li>`).join('')}</ul>`,
     buttons: [{ label: 'Fechar', cls: 'primary' }] });

@@ -19,7 +19,7 @@ export default {
     return uid;
   },
   async listCases() {
-    const { data, error } = await sb.from('cases').select('id,title,story,questions').order('id');
+    const { data, error } = await sb.from('cases').select('*').order('id');
     if (error) err(error); return data;
   },
   async createRoom(name, color, caseId) {

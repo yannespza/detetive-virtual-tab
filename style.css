@@ -213,3 +213,7 @@ details summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .cmp.g-wrong { border-color: #b8322f; background: #fdeceb; }
 .cmp .q em { font-family: var(--sans); font-style: normal; font-size: 12px; font-weight: 600; margin-left: 4px; }
 .cmp.g-ok .q em { color: #2e7a3c; } .cmp.g-partial .q em { color: #9a6b00; } .cmp.g-wrong .q em { color: #a3241f; }
+.case-info { margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: rgba(201,162,39,.08); border: 1px dashed #5a4a36; }
+.case-info p { margin: 4px 0 0; font-family: var(--book); font-style: italic; color: var(--text); font-size: 14px; line-height: 1.45; }
+.stars { color: var(--brass2); letter-spacing: 2px; font-size: 15px; }
+.modal h2 .stars { color: #a8841c; font-size: 14px; margin-left: 6px; }
