@@ -1,5 +1,6 @@
 import { COLS, ROWS, RIVER_ROW, LOCS, DECOR, CLUE_LOCS, UNSEALABLE, key, isPath, isBridge, locAt, doorDir, doorId, reachable } from './board.js';
 import Sound from './sound.js';
+import { grade } from './grade.js';
 
 const api = window.__API__ || (await import('./api.js')).default;
 
@@ -717,19 +718,6 @@ async function sealDoor() {
 
 // ---------- acusação ----------
 // ---------- conferência automática das respostas ----------
-const normTxt = (t) => ' ' + String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
-const hasKey = (txt, k) => txt.includes(' ' + normTxt(k).trim());
-function grade(answer, item) {
-  const txt = normTxt(answer);
-  if (!txt.trim()) return { st: 'wrong', msg: 'Sem resposta.' };
-  if (!item.need) return { st: 'manual' };
-  if ((item.deny || []).some((k) => hasKey(txt, k))) return { st: 'wrong', msg: 'Resposta errada ou com mais de uma opção.' };
-  const hits = item.need.filter((g) => g.some((k) => hasKey(txt, k))).length;
-  if (hits === item.need.length) return { st: 'ok', msg: 'Correta!' };
-  if (hits > 0) return { st: 'partial', msg: 'Incompleta: faltou alguma coisa importante.' };
-  return { st: 'wrong', msg: 'Errada.' };
-}
-
 async function accuse() {
   if (!S.nb) S.nb = await api.getNotebook(S.room.id).catch(() => ({ clues: {}, answers: {}, notes: '' }));
   const c = caseOf(S.room.case_id), ans = S.nb.answers || {};
