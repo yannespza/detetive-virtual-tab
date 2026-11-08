@@ -458,6 +458,10 @@ function renderLobby() {
       <h3>Caso</h3>
       ${isHost() ? `<div id="case-pick"></div>`
         : `<p><b>Caso ${c?.id} · ${esc(c?.title)}</b></p>${caseInfo(c)}`}
+      <div class="dice-opt"><span>Dados</span>${isHost()
+        ? `<div class="seg"><button data-dn="1" class="${(s.diceCount || 2) === 1 ? 'on' : ''}">🎲 1 dado</button><button data-dn="2" class="${(s.diceCount || 2) === 2 ? 'on' : ''}">🎲🎲 2 dados</button></div>`
+        : `<b>${(s.diceCount || 2) === 1 ? '🎲 1 dado' : '🎲🎲 2 dados'}</b>`}</div>
+      <p class="muted small">${(s.diceCount || 2) === 1 ? 'Com 1 dado, anda-se de 1 a 6 casas: a partida fica mais longa e estratégica.' : 'Com 2 dados, anda-se de 2 a 12 casas: a partida fica mais rápida.'}</p>
       ${isHost() ? `<button class="btn primary big" id="start">${s.players.length < 2 ? 'Começar sozinho (modo treino)' : 'Começar a partida'}</button>`
         : `<p class="waiting">Aguardando o anfitrião começar a partida...</p>`}
     </div>
@@ -470,6 +474,7 @@ function renderLobby() {
   if (isHost()) {
     casePicker($('#case-pick'), r.case_id, false, (id) => commit(() => true, { case_id: id }));
     $('#start').onclick = startGame;
+    document.querySelectorAll('[data-dn]').forEach((b) => (b.onclick = () => commit((st2) => { st2.diceCount = +b.dataset.dn; })));
   }
 }
 
@@ -615,7 +620,7 @@ function targets() {
     const v = S.room.version;
     if (S.reachVer !== v) {
       S.reachVer = v;
-      S.reach = reachable({ from: s.pos[S.uid], steps: s.turn.dice[0] + s.turn.dice[1], occupied: occupiedByOthers(), me: S.uid, seals: s.seals, hasKey: s.hasKey[S.uid] });
+      S.reach = reachable({ from: s.pos[S.uid], steps: s.turn.dice.reduce((x, y) => x + y, 0), occupied: occupiedByOthers(), me: S.uid, seals: s.seals, hasKey: s.hasKey[S.uid] });
     }
     return S.reach;
   }
@@ -756,20 +761,22 @@ function dieSVG(n) {
     5: [[28, 28], [72, 28], [50, 50], [28, 72], [72, 72]], 6: [[28, 26], [72, 26], [28, 50], [72, 50], [28, 74], [72, 74]] };
   return `<svg viewBox="0 0 100 100" class="die"><rect x="4" y="4" width="92" height="92" rx="18"/>${P[n].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="9"/>`).join('')}</svg>`;
 }
+const diceN = () => (st().diceCount === 1 ? 1 : 2);
 async function spinDice(final) {
-  S.rolling = { a: 1, b: 1 }; const end = Date.now() + 750; Sound.sfx('dice');
-  while (Date.now() < end) { S.rolling = { a: rnd6(), b: rnd6() }; updatePanel(); await sleep(80); }
+  const n = diceN();
+  S.rolling = Array(n).fill(1); const end = Date.now() + 750; Sound.sfx('dice');
+  while (Date.now() < end) { S.rolling = Array.from({ length: n }, rnd6); updatePanel(); await sleep(80); }
   S.rolling = null; updatePanel(); updateBoard();
 }
 async function animateDiceRemote(d) { await spinDice(d); }
 
 async function rollDice() {
-  const a = rnd6(), b = rnd6();
+  const dice = Array.from({ length: diceN() }, rnd6), total = dice.reduce((x, y) => x + y, 0);
   await spinDice();
   await commit((s) => {
     if (s.order[s.turn.idx] !== S.uid || s.turn.phase !== 'start') return false;
-    s.turn.dice = [a, b]; s.turn.phase = 'move'; s.turn.rollId = (s.turn.rollId || 0) + 1;
-    log(s, `${nameOf(S.uid)} tirou ${a} + ${b} = ${a + b} 🎲`);
+    s.turn.dice = dice; s.turn.phase = 'move'; s.turn.rollId = (s.turn.rollId || 0) + 1;
+    log(s, `${nameOf(S.uid)} tirou ${dice.length > 1 ? dice.join(' + ') + ' = ' : ''}${total} 🎲`);
   });
   S.seenRoll = st().turn.rollId;
 }
@@ -820,9 +827,9 @@ function updateLog() {
 }
 
 function diceRow(d) {
-  if (S.rolling) return `<div class="dice rolling">${dieSVG(S.rolling.a)}${dieSVG(S.rolling.b)}</div>`;
+  if (S.rolling) return `<div class="dice rolling">${S.rolling.map(dieSVG).join('')}</div>`;
   if (!d) return '';
-  return `<div class="dice">${dieSVG(d[0])}${dieSVG(d[1])}<b>= ${d[0] + d[1]}</b></div>`;
+  return `<div class="dice">${d.map(dieSVG).join('')}${d.length > 1 ? `<b>= ${d.reduce((x, y) => x + y, 0)}</b>` : ''}</div>`;
 }
 
 function updatePanel() {
@@ -855,7 +862,7 @@ function updatePanel() {
       btns.push(['🗺️ Escolher na lista', 'ghost', pickCarriageList]);
     } else {
       msg = '<b>Sua vez!</b>' + (loc ? ` Você está em ${esc(locName(loc))}.` : '');
-      btns.push(['🎲 Jogar os dados', 'primary', rollDice]);
+      btns.push([diceN() === 1 ? '🎲 Jogar o dado' : '🎲 Jogar os dados', 'primary', rollDice]);
     }
     pickupButtons(btns, loc);
     if (loc && !UNSEALABLE.includes(loc) && s.hasBadge[me]) btns.push(['🛡️ Lacrar entrada', '', sealDoor]);
@@ -1234,7 +1241,7 @@ function showRules() {
   modal({ cls: 'wide', title: '📖 Como jogar', html: `<div class="rules">
     <p><b>Objetivo:</b> ser o primeiro detetive a responder corretamente todos os itens do caso.</p>
     <p><b>Início:</b> todos começam na Casa de Sherlock Holmes. Leia o caso (botão no topo).</p>
-    <p><b>Na sua vez:</b> jogue os dois dados e ande até a soma dos pontos, na horizontal ou vertical. Você pode passar por cima de outros peões, mas não parar na mesma casa. Ao chegar à seta de um local, você entra nele.</p>
+    <p><b>Na sua vez:</b> jogue os dados e ande até a soma dos pontos (o anfitrião escolhe, antes de começar, se a partida usa 1 ou 2 dados), na horizontal ou vertical. Você pode passar por cima de outros peões, mas não parar na mesma casa. Ao chegar à seta de um local, você entra nele.</p>
     <p><b>Pistas:</b> ao entrar num local, você recebe a pista dele só na sua tela, e ela vai direto para a sua caderneta. Algumas são frases; outras são charadas em partes (I, II, III) espalhadas por vários locais. Alguns locais não têm pista.</p>
     <p><b>Duas entradas:</b> Parque, Museu e Hotel têm duas entradas.</p>
     <p><b>Distintivo 🛡️:</b> antes de sair de um local, você pode lacrar uma entrada dele. Ninguém entra por ela, a não ser você. Não vale lacrar a Scotland Yard, o Chaveiro nem a Casa de Sherlock Holmes.</p>
