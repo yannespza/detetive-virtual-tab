@@ -33,8 +33,9 @@ const myTurn = () => S.room?.status === 'playing' && currentId() === S.uid;
 const locName = (l) => LOCS[l]?.name || l;
 const stars = (c) => c?.level ? '★'.repeat(c.level) + '☆'.repeat(5 - c.level) : '';
 const PLAYED_KEY = 'dvt-played-v2';
-const playedSet = () => { try { return new Set(JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]')); } catch { return new Set(); } };
-const playedTag = (c) => c.id + ':' + c.title;
+// guarda o título (o número do caso pode mudar quando os casos são reorganizados)
+const playedSet = () => { try { return new Set(JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]').map((t) => String(t).replace(/^\d+:/, ''))); } catch { return new Set(); } };
+const playedTag = (c) => c.title;
 function markPlayed(c) { if (!c) return; try { const p = playedSet(); p.add(playedTag(c)); localStorage.setItem(PLAYED_KEY, JSON.stringify([...p])); } catch {} }
 // seletor compacto de caso: ‹ Caso › e toque no meio abre a lista
 function casePicker(el, value, allowRandom, onChange) {
@@ -337,6 +338,7 @@ async function startGame() {
     ids.forEach((id) => { s.pos[id] = { loc: 'sherlock', cell: null }; s.hasKey[id] = many; s.hasBadge[id] = true; });
     s.keysAtChaveiro = many ? 0 : ids.length;
     s.startedAt = Date.now();
+    const cc = caseOf(S.room.case_id); s.caseTitle = cc?.title; s.caseLevel = cc?.level;
     s.seals = {}; s.badgesAtSY = []; s.accuser = null; s.winner = null; s.moveSeq = 0; s.lastMove = null; s.log = [];
     log(s, `A investigação começou! Ordem: ${ids.map((id) => s.players.find((p) => p.id === id).name).join(' → ')}.`);
   }, { status: 'playing' });
@@ -992,7 +994,7 @@ async function showRanking() {
       p.games++; if (s.eliminated?.[id]) p.wrong++;
       if (s.winner === id) { p.wins++; if (s.startedAt && s.endedAt) p.times.push(s.endedAt - s.startedAt); }
     }
-    if (s.winner) recent.push({ who: (s.players || []).find((x) => x.id === s.winner)?.name, c: caseOf(r.case_id), t: s.startedAt && s.endedAt ? s.endedAt - s.startedAt : null, n: s.order.length });
+    if (s.winner) recent.push({ who: (s.players || []).find((x) => x.id === s.winner)?.name, c: s.caseTitle ? { title: s.caseTitle, level: s.caseLevel } : caseOf(r.case_id), t: s.startedAt && s.endedAt ? s.endedAt - s.startedAt : null, n: s.order.length });
   }
   const list = Object.values(P).sort((a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games || a.wrong - b.wrong);
   const medal = ['🥇', '🥈', '🥉'];
