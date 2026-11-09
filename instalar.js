@@ -6,11 +6,12 @@
   var ehIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   var ehAndroid = /android/i.test(ua);
   var instalado = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
-  if (instalado || (!ehIOS && !ehAndroid)) return;
+  if (instalado) return;
+  var ehCelular = ehIOS || ehAndroid;
 
   var CHAVE = "ajuda-instalar-fechado-em";
   var promptAndroid = null;
-  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); promptAndroid = e; atualizarBotao(); });
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); promptAndroid = e; atualizarBotao(); if (!aviso) mostrarPilula(); });
 
   function lerFechado() { try { return Number(localStorage.getItem(CHAVE)) || 0; } catch (e) { return 0; } }
   function gravarFechado() { try { localStorage.setItem(CHAVE, String(Date.now())); } catch (e) {} }
@@ -43,6 +44,8 @@
     ".ih-folha ol{margin:0 0 14px;padding-left:22px}.ih-folha li{margin-bottom:10px}" +
     ".ih-folha .ih-dica{font-size:13.5px;color:#666;background:#f7f7f7;border-radius:10px;padding:10px 12px;margin-bottom:14px}" +
     ".ih-ok{width:100%;padding:13px;font-size:15px}" +
+    ".ih-pil{position:fixed;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:99997;border:none;border-radius:999px;padding:9px 14px;color:#fff;" +
+    "font:700 13px system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;gap:6px}" +
     "@media (prefers-color-scheme:dark){.ih-aviso,.ih-folha{background:#2a2a2a;color:#f2f2f2}.ih-aviso span,.ih-folha .ih-dica{color:#bbb}" +
     ".ih-folha .ih-dica{background:#333}.ih-abas{background:#383838}.ih-abas button.ih-sel{background:#4a4a4a;color:#fff}}";
   document.head.appendChild(css);
@@ -83,12 +86,26 @@
     botaoAviso.onclick = function () { promptAndroid ? instalarAgora() : abrirPassos(); };
     var x = document.createElement("button");
     x.className = "ih-x"; x.setAttribute("aria-label", "Fechar"); x.textContent = "×";
-    x.onclick = function () { gravarFechado(); esconderAviso(); };
+    x.onclick = function () { gravarFechado(); esconderAviso(); mostrarPilula(); };
     aviso.appendChild(botaoAviso); aviso.appendChild(x);
     document.body.appendChild(aviso);
     atualizarBotao();
+    esconderPilula();
     setTimeout(function () { aviso.classList.add("ih-on"); }, 50);
   }
+  var pilula;
+  function mostrarPilula() {
+    if (pilula || aviso || instalado) return;
+    if (!ehCelular && !promptAndroid) return;
+    pilula = document.createElement("button");
+    pilula.className = "ih-pil";
+    pilula.style.background = cor;
+    pilula.setAttribute("aria-label", "Instalar app");
+    pilula.innerHTML = "⬇ Instalar app";
+    pilula.onclick = function () { promptAndroid ? instalarAgora() : abrirPassos(); };
+    document.body.appendChild(pilula);
+  }
+  function esconderPilula() { if (pilula) { pilula.remove(); pilula = null; } }
   function esconderAviso() {
     if (!aviso) return;
     aviso.classList.remove("ih-on");
@@ -100,7 +117,7 @@
     promptAndroid.prompt();
     promptAndroid.userChoice.then(function (r) {
       promptAndroid = null; atualizarBotao();
-      if (r && r.outcome === "accepted") esconderAviso();
+      if (r && r.outcome === "accepted") { esconderAviso(); esconderPilula(); }
     });
   }
 
@@ -130,8 +147,11 @@
   // Permite abrir a ajuda de qualquer lugar do app: mostrarAjudaInstalacao()
   window.mostrarAjudaInstalacao = abrirPassos;
 
-  window.addEventListener("appinstalled", esconderAviso);
+  window.addEventListener("appinstalled", function () { esconderAviso(); esconderPilula(); });
   var quatorzeDias = 14 * 24 * 60 * 60 * 1000;
-  function iniciar() { if (Date.now() - lerFechado() > quatorzeDias) setTimeout(mostrarAviso, 1500); }
+  function iniciar() {
+    if (ehCelular && Date.now() - lerFechado() > quatorzeDias) setTimeout(mostrarAviso, 1500);
+    else setTimeout(mostrarPilula, 800);
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar); else iniciar();
 })();
