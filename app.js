@@ -948,23 +948,41 @@ async function sealDoor() {
 // ---------- suspeitos, vítima e campos de resposta ----------
 const suspectsOf = (c) => (c?.suspects || []).filter((p) => !p.victim);
 const victimsOf = (c) => (c?.suspects || []).filter((p) => p.victim);
-// pergunta "Quem...?": seletor com os suspeitos não riscados (os destacados ⭐ primeiro)
+// pergunta "Quem...?": seletor ‹ nome › com os suspeitos não riscados; se houver ⭐, só os ⭐
 const isWho = (q) => !!q.who;
-function whoOptions(c, nb, val) {
+function whoList(c, nb) {
   const st = nb?.answers?._sus || {};
-  const list = suspectsOf(c).filter((p) => st[p.name] !== 'x').sort((a, b) => (st[b.name] === 'star') - (st[a.name] === 'star'));
-  const opts = list.map((p) => `<option value="${esc(p.name)}"${p.name === val ? ' selected' : ''}>${st[p.name] === 'star' ? '⭐ ' : ''}${esc(p.name)} (${esc(p.role)})</option>`).join('');
-  return `<option value="">${list.length ? '— escolha um suspeito —' : '— todos os suspeitos estão riscados —'}</option>${opts}`;
+  const list = suspectsOf(c).filter((p) => st[p.name] !== 'x');
+  const starred = list.filter((p) => st[p.name] === 'star');
+  return starred.length ? starred : list;
 }
 const answerField = (c, q, nb) => {
   const val = nb?.answers?.[q.key] || '';
   return `<label class="field"><span>${q.key}) ${esc(q.label)} <small>${esc(q.ask)}</small></span>${isWho(q)
-    ? `<select data-a="${q.key}" class="who">${whoOptions(c, nb, val)}</select>`
+    ? `<div class="who-pick" data-who="${q.key}"><input type="hidden" data-a="${q.key}" value="${esc(val)}"></div>`
     : `<input data-a="${q.key}" value="${esc(val)}">`}</label>`;
 };
-function refreshWho(wrap, c, nb) {
-  wrap.querySelectorAll('select.who').forEach((sel) => { const v = sel.value; sel.innerHTML = whoOptions(c, nb, v); });
+function drawWho(box, c, nb) {
+  const inp = box.querySelector('input'), list = whoList(c, nb), st = nb?.answers?._sus || {};
+  let i = list.findIndex((p) => p.name === inp.value);
+  if (i < 0 && inp.value) { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  const p = list[i];
+  [...box.children].forEach((ch) => ch !== inp && ch.remove());
+  box.insertAdjacentHTML('afterbegin', `<div class="cpick">
+    <button type="button" class="cp-arr" data-d="-1" aria-label="Suspeito anterior"${list.length ? '' : ' disabled'}>‹</button>
+    <div class="cp-mid wp-mid">${p
+      ? `<small>${st[p.name] === 'star' ? '⭐ ' : ''}${esc(p.role)} · ${i + 1}/${list.length}</small><b>${esc(p.name)}</b>`
+      : `<small>${list.length ? `${list.length} suspeito${list.length > 1 ? 's' : ''}${list.some((x) => st[x.name] === 'star') ? ' com ⭐' : ''}` : 'todos riscados'}</small><b class="muted">${list.length ? 'Use as setas para escolher' : 'Nenhum suspeito disponível'}</b>`}</div>
+    <button type="button" class="cp-arr" data-d="1" aria-label="Próximo suspeito"${list.length ? '' : ' disabled'}>›</button></div>`);
+  box.querySelectorAll('.cp-arr').forEach((bt) => (bt.onclick = (e) => {
+    e.preventDefault();
+    const d = +bt.dataset.d, n = list.length; if (!n) return;
+    const ni = i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n;
+    inp.value = list[ni].name; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    drawWho(box, c, nb);
+  }));
 }
+function refreshWho(wrap, c, nb) { wrap.querySelectorAll('.who-pick').forEach((box) => drawWho(box, c, nb)); }
 
 // ---------- acusação ----------
 // ---------- conferência automática das respostas ----------
@@ -975,6 +993,7 @@ async function accuse() {
     html: `<p class="muted small">Revise suas respostas. Elas não precisam ser iguais às do jogo, mas precisam ter as informações certas. <b>Se alguma estiver errada ou incompleta, você sai do jogo.</b></p>
       ${c.questions.map((q) => answerField(c, q, S.nb)).join('')}`,
     buttons: [{ label: 'Voltar', cls: 'ghost' }, { label: '🔍 Conferir respostas', cls: 'primary', close: false, onClick: () => submitAccusation(wrap) }] });
+  refreshWho(wrap, c, S.nb);
 }
 async function submitAccusation(wrap) {
   const c = caseOf(S.room.case_id);
@@ -1106,7 +1125,8 @@ async function showNotebook() {
     $('#saved', wrap).textContent = 'Salvando...';
     clearTimeout(saveTimer); saveTimer = setTimeout(flushNotebook, 700);
   };
-  wrap.querySelectorAll('input,textarea,select').forEach((i) => { i.addEventListener('input', onInput); i.addEventListener('change', onInput); });
+  wrap.querySelectorAll('input,textarea').forEach((i) => i.addEventListener('input', onInput));
+  refreshWho(wrap, c, nb);
   // suspeitos: normal → riscado → principal → normal
   const NEXT = { none: 'x', x: 'star', star: 'none' };
   wrap.querySelectorAll('[data-sus]').forEach((li) => (li.onclick = () => {

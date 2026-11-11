@@ -313,5 +313,8 @@ h4 small.muted { font-weight: 400; font-size: 11px; margin-left: 6px; font-famil
 .victims li{padding:5px 2px;display:flex;flex-wrap:wrap;gap:0 8px;align-items:baseline;color:var(--ink);border-bottom:1px dashed rgba(43,32,22,.18)}
 .victims li::before{content:'✝';color:#7a6345;width:18px;text-align:center}
 .victims li span{color:#7a6345;font-size:.88em;font-style:italic}
-select.who{width:100%}
-.notebook select.who{background:#fffdf6}
+.who-pick .cp-mid{cursor:default;padding-right:12px;min-height:44px}
+.notebook .who-pick .cp-mid{background:#fffdf6;color:var(--ink);border-color:#c9b48a}
+.notebook .who-pick .cp-arr{border-color:#c9b48a;color:#7a6345}
+.notebook .who-pick .cp-mid small{color:#8e7e65}
+.who-pick .cp-arr:disabled{opacity:.35}
