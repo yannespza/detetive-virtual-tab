@@ -308,3 +308,10 @@ h4 small.muted { font-weight: 400; font-size: 11px; margin-left: 6px; font-famil
 .seg { display: flex; border: 1px solid #5a4a36; border-radius: 10px; overflow: hidden; }
 .seg button { border: 0; background: transparent; color: var(--text); padding: 8px 12px; font: inherit; font-size: 14px; cursor: pointer; }
 .seg button.on { background: var(--brass); color: #1a1208; font-weight: 700; }
+
+.victims{list-style:none;padding:0;margin:0 0 12px}
+.victims li{padding:5px 2px;display:flex;flex-wrap:wrap;gap:0 8px;align-items:baseline;color:var(--ink);border-bottom:1px dashed rgba(43,32,22,.18)}
+.victims li::before{content:'✝';color:#7a6345;width:18px;text-align:center}
+.victims li span{color:#7a6345;font-size:.88em;font-style:italic}
+select.who{width:100%}
+.notebook select.who{background:#fffdf6}

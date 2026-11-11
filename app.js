@@ -945,6 +945,27 @@ async function sealDoor() {
   wrap.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { closeModal(); go(+b.dataset.i); }));
 }
 
+// ---------- suspeitos, vítima e campos de resposta ----------
+const suspectsOf = (c) => (c?.suspects || []).filter((p) => !p.victim);
+const victimsOf = (c) => (c?.suspects || []).filter((p) => p.victim);
+// pergunta "Quem...?": seletor com os suspeitos não riscados (os destacados ⭐ primeiro)
+const isWho = (q) => !!q.who;
+function whoOptions(c, nb, val) {
+  const st = nb?.answers?._sus || {};
+  const list = suspectsOf(c).filter((p) => st[p.name] !== 'x').sort((a, b) => (st[b.name] === 'star') - (st[a.name] === 'star'));
+  const opts = list.map((p) => `<option value="${esc(p.name)}"${p.name === val ? ' selected' : ''}>${st[p.name] === 'star' ? '⭐ ' : ''}${esc(p.name)} (${esc(p.role)})</option>`).join('');
+  return `<option value="">${list.length ? '— escolha um suspeito —' : '— todos os suspeitos estão riscados —'}</option>${opts}`;
+}
+const answerField = (c, q, nb) => {
+  const val = nb?.answers?.[q.key] || '';
+  return `<label class="field"><span>${q.key}) ${esc(q.label)} <small>${esc(q.ask)}</small></span>${isWho(q)
+    ? `<select data-a="${q.key}" class="who">${whoOptions(c, nb, val)}</select>`
+    : `<input data-a="${q.key}" value="${esc(val)}">`}</label>`;
+};
+function refreshWho(wrap, c, nb) {
+  wrap.querySelectorAll('select.who').forEach((sel) => { const v = sel.value; sel.innerHTML = whoOptions(c, nb, v); });
+}
+
 // ---------- acusação ----------
 // ---------- conferência automática das respostas ----------
 async function accuse() {
@@ -952,7 +973,7 @@ async function accuse() {
   const c = caseOf(S.room.case_id), ans = S.nb.answers || {};
   const wrap = modal({ title: '🕵️ Sua solução', cls: 'wide', dismiss: false,
     html: `<p class="muted small">Revise suas respostas. Elas não precisam ser iguais às do jogo, mas precisam ter as informações certas. <b>Se alguma estiver errada ou incompleta, você sai do jogo.</b></p>
-      ${c.questions.map((q) => `<label class="field"><span>${q.key}) ${esc(q.label)} <small>${esc(q.ask)}</small></span><input data-a="${q.key}" value="${esc(ans[q.key] || '')}"></label>`).join('')}`,
+      ${c.questions.map((q) => answerField(c, q, S.nb)).join('')}`,
     buttons: [{ label: 'Voltar', cls: 'ghost' }, { label: '🔍 Conferir respostas', cls: 'primary', close: false, onClick: () => submitAccusation(wrap) }] });
 }
 async function submitAccusation(wrap) {
@@ -1052,6 +1073,7 @@ function showCase() {
   const c = caseOf(S.room.case_id);
   modal({ cls: 'wide', title: `📜 Caso ${c.id} <span class="stars">${stars(c)}</span>`, html: `<h3 class="case-title">${esc(c.title)}</h3>
     <div class="story">${esc(c.story).split('\n\n').map((p) => `<p>${p}</p>`).join('')}</div>
+    ${victimsOf(c).length ? `<p class="small"><b>⚰️ Vítima:</b> ${victimsOf(c).map((p) => `${esc(p.name)} <i>(${esc(p.role)})</i>`).join(', ')}</p>` : ''}
     <p><b>Holmes precisa descobrir:</b></p><ul class="qs">${c.questions.map((q) => `<li><b>${q.key})</b> ${esc(q.ask)}</li>`).join('')}</ul>`,
     buttons: [{ label: 'Fechar', cls: 'primary' }] });
 }
@@ -1066,12 +1088,13 @@ async function showNotebook() {
       <div class="rh">${esc(g.label)} <small>${g.found}/${g.total} partes</small></div>
       ${g.parts.map((p) => `<div class="rp ${p.text ? '' : 'missing'}"><b>${p.roman})</b> ${p.text ? `${esc(p.text)} <i>${LOCS[p.loc].icon}</i>` : 'ainda não encontrada'}</div>`).join('')}
     </div>`).join('')}</div>` : ''}
-    ${c.suspects?.length ? `<h4>🕵️ Suspeitos <small class="muted">toque para riscar ou destacar</small></h4><ul class="suspects">${c.suspects.map((p, i) => `<li data-sus="${i}" class="sus-${(nb.answers?._sus || {})[p.name] || 'none'}"><i class="sus-ico"></i><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
+    ${victimsOf(c).length ? `<h4>⚰️ Vítima${victimsOf(c).length > 1 ? 's' : ''}</h4><ul class="victims">${victimsOf(c).map((p) => `<li><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
+    ${suspectsOf(c).length ? `<h4>🕵️ Suspeitos <small class="muted">toque para riscar ou destacar</small></h4><ul class="suspects">${suspectsOf(c).map((p, i) => `<li data-sus="${i}" class="sus-${(nb.answers?._sus || {})[p.name] || 'none'}"><i class="sus-ico"></i><b>${esc(p.name)}</b> <span>${esc(p.role)}</span></li>`).join('')}</ul>` : ''}
     <h4>Pistas</h4>
     <div class="clues">${CLUE_LOCS.map((l) => `<div class="crow ${nb.clues[l] ? '' : 'empty'}"><div class="cl">${LOCS[l].icon} ${esc(LOCS[l].name)}</div>
       <div class="ct">${nb.clues[l] ? esc(nb.clues[l]).replace(/\n/g, '<br>') : '—'}</div></div>`).join('')}</div>
     <h4>Soluções</h4>
-    ${c.questions.map((q) => `<label class="field"><span>${q.key}) ${esc(q.label)} <small>${esc(q.ask)}</small></span><input data-a="${q.key}" value="${esc(nb.answers?.[q.key] || '')}"></label>`).join('')}
+    ${c.questions.map((q) => answerField(c, q, nb)).join('')}
     <h4>Anotações gerais</h4>
     <textarea id="notes" rows="5" placeholder="Suspeitas, ligações entre as pistas...">${esc(nb.notes || '')}</textarea>
     <p class="muted small" id="saved">Salvo automaticamente · só você vê.</p>`,
@@ -1083,14 +1106,16 @@ async function showNotebook() {
     $('#saved', wrap).textContent = 'Salvando...';
     clearTimeout(saveTimer); saveTimer = setTimeout(flushNotebook, 700);
   };
-  wrap.querySelectorAll('input,textarea').forEach((i) => i.addEventListener('input', onInput));
+  wrap.querySelectorAll('input,textarea,select').forEach((i) => { i.addEventListener('input', onInput); i.addEventListener('change', onInput); });
   // suspeitos: normal → riscado → principal → normal
   const NEXT = { none: 'x', x: 'star', star: 'none' };
   wrap.querySelectorAll('[data-sus]').forEach((li) => (li.onclick = () => {
-    const name = c.suspects[+li.dataset.sus].name;
+    const name = suspectsOf(c)[+li.dataset.sus].name;
     nb.answers = nb.answers || {}; const m = (nb.answers._sus = { ...(nb.answers._sus || {}) });
     const nv = NEXT[m[name] || 'none']; if (nv === 'none') delete m[name]; else m[name] = nv;
     li.className = 'sus-' + nv;
+    refreshWho(wrap, c, nb);
+    wrap.querySelectorAll('[data-a]').forEach((i) => (nb.answers[i.dataset.a] = i.value));
     $('#saved', wrap).textContent = 'Salvando...'; clearTimeout(saveTimer); saveTimer = setTimeout(flushNotebook, 500);
   }));
 }
@@ -1250,7 +1275,7 @@ function showRules() {
     <p><b>Ponte:</b> o rio só pode ser atravessado pelas pontes.</p>
     <p><b>Charadas:</b> as partes de uma charada ficam em locais diferentes, e um mesmo local pode guardar partes de charadas diferentes. A caderneta junta as partes sozinha, na seção 🧩 Charadas.</p>
     <p><b>Locais visitados ✔:</b> no tabuleiro, os locais cuja pista você já leu ganham um ✔. Só você vê os seus.</p>
-    <p><b>Caderneta 📒:</b> traz o caso, as pistas, as charadas e a lista de suspeitos. Toque num suspeito para riscá-lo; toque de novo para marcá-lo como principal suspeito ⭐; mais um toque volta ao normal. Só você vê.</p>
+    <p><b>Caderneta 📒:</b> traz a vítima, as pistas, as charadas e a lista de suspeitos. Toque num suspeito para riscá-lo; toque de novo para marcá-lo como principal suspeito ⭐; mais um toque volta ao normal. Nas perguntas "Quem...?", você escolhe o nome numa lista: os riscados somem dela e os ⭐ aparecem primeiro. Só você vê.</p>
     <p><b>Solução:</b> quando achar que sabe tudo, volte à Casa de Sherlock Holmes e toque em "Apresentar solução". Antes de conferir, dá para revisar e corrigir as respostas. Só você vê a solução oficial.</p>
     <p><b>Conferência:</b> as respostas não precisam ser iguais às do jogo. Basta a palavra certa: um nome (só o primeiro nome já vale), um lugar ou um objeto. Erros de digitação leves são aceitos. Verde = certa, amarelo = incompleta, vermelho = errada. Responder mais de um suspeito na mesma pergunta conta como errado. Só com tudo verde aparece o botão de acerto; se errar, você sai do jogo e guarda segredo.</p>
     <p><b>Fim do caso:</b> todos veem as respostas de quem acertou ao lado da solução oficial, com "🔎 Como chegar a esta resposta", que mostra quais pistas levavam a cada conclusão.</p>
