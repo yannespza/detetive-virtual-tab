@@ -94,7 +94,7 @@ export function reachable({ from, steps, occupied, me, seals, hasKey }) {
     if (from.loc === id) continue;
     let best = null;
     l.doors.forEach(([x, y], i) => {
-      const k = key(x, y); if (!dist.has(k)) return;
+      const k = key(x, y); if (!dist.has(k) || dist.get(k) + 1 > steps) return; // entrar no local custa mais 1 passo depois da seta
       const blocked = sealedByOther(id, i);
       if (blocked && !hasKey) return;
       const cand = { door: i, useKey: !!blocked, dist: dist.get(k), path: pathTo(k) };

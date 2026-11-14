@@ -1286,7 +1286,7 @@ function showRules() {
   modal({ cls: 'wide', title: '📖 Como jogar', html: `<div class="rules">
     <p><b>Objetivo:</b> ser o primeiro detetive a responder corretamente todos os itens do caso.</p>
     <p><b>Início:</b> todos começam na Casa de Sherlock Holmes. Leia o caso (botão no topo).</p>
-    <p><b>Na sua vez:</b> jogue os dados e ande até a soma dos pontos (o anfitrião escolhe, antes de começar, se a partida usa 1 ou 2 dados), na horizontal ou vertical. Você pode passar por cima de outros peões, mas não parar na mesma casa. Ao chegar à seta de um local, você entra nele.</p>
+    <p><b>Na sua vez:</b> jogue os dados e ande até a soma dos pontos (o anfitrião escolhe, antes de começar, se a partida usa 1 ou 2 dados), na horizontal ou vertical. Você pode passar por cima de outros peões, mas não parar na mesma casa. A casa da seta vermelha de cada local conta como uma casa normal: para entrar, é preciso ter ao menos mais 1 ponto depois de chegar nela. Se os dados acabarem exatamente na seta, você para ali e só entra na próxima vez.</p>
     <p><b>Pistas:</b> ao entrar num local, você recebe a pista dele só na sua tela, e ela vai direto para a sua caderneta. Algumas são frases; outras são charadas em partes (I, II, III) espalhadas por vários locais. Alguns locais não têm pista.</p>
     <p><b>Duas entradas:</b> Parque, Museu e Hotel têm duas entradas.</p>
     <p><b>Distintivo 🛡️:</b> antes de sair de um local, você pode lacrar uma entrada dele. Ninguém entra por ela, a não ser você. Não vale lacrar a Scotland Yard, o Chaveiro nem a Casa de Sherlock Holmes.</p>
