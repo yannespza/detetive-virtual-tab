@@ -738,13 +738,6 @@ function notifyTurn() {
   if (S.room.state.order.length < 2) return;
   Sound.sfx('turn');
   try { navigator.vibrate?.([120, 80, 120]); } catch {}
-  document.querySelector('.turn-pop')?.remove();
-  const pop = document.createElement('div'); pop.className = 'turn-pop';
-  pop.innerHTML = `<div class="tp-card"><div class="tp-ico">🔔</div><b>É a sua vez!</b>
-    <div class="tp-act"><button class="btn ghost" data-a="stay">Continuar lendo</button><button class="btn primary" data-a="go">Jogar agora</button></div></div>`;
-  pop.querySelector('[data-a=go]').onclick = () => { if (S.nb && $('#modal .notebook')) flushNotebook(); closeModal(); pop.remove(); };
-  pop.querySelector('[data-a=stay]').onclick = () => pop.remove();
-  document.body.appendChild(pop);
 }
 
 function showClue(loc, txt) {
